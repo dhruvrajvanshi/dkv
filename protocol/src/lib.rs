@@ -73,10 +73,37 @@ impl From<io::Error> for Error {
 
 pub type Result<T> = std::result::Result<T, Error>;
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum Command {
     Put(Value, Value),
     Get(Value),
+}
+impl Command {
+    pub fn read<T: Read>(stream: &mut T) -> Result<Command> {
+        let command = Value::read(stream)?;
+        match command {
+            Value::String(s) => match s.as_str() {
+                "PUT" => Ok(Command::Put(Value::read(stream)?, Value::read(stream)?)),
+                "GET" => Ok(Command::Get(Value::read(stream)?)),
+                _ => Err(Error::BadMessage(BadMessageError::InvalidLength(s))),
+            },
+        }
+    }
+
+    pub fn write<T: Write>(&self, stream: &mut T) -> Result<()> {
+        match self {
+            Command::Put(key, value) => {
+                Value::from("PUT").write(stream)?;
+                key.write(stream)?;
+                value.write(stream)?;
+            }
+            Command::Get(key) => {
+                Value::from("GET").write(stream)?;
+                key.write(stream)?;
+            }
+        }
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -97,6 +124,18 @@ mod tests {
         let value = Value::String("hello".to_string());
         value.write(&mut output)?;
         assert_eq!(output, b"$5\r\nhello\r\n");
+        Ok(())
+    }
+
+    #[test]
+    fn can_read_and_write_commands() -> Result<()> {
+        let mut output: Vec<u8> = vec![];
+        let command = Command::Put(Value::from("key"), Value::from("value"));
+        command.write(&mut output)?;
+        assert_eq!(output, b"PUT$3\r\nkey\r\n$5\r\nvalue\r\n");
+        let input = b"PUT$3\r\nkey\r\n$5\r\nvalue\r\n";
+        let result = Command::read(&mut &input[..])?;
+        assert_eq!(command, result);
         Ok(())
     }
 }

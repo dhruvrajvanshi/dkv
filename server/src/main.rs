@@ -1,4 +1,4 @@
-use std::io::Result;
+use dkv_protocol::Result;
 use std::net::TcpListener;
 
 fn main() -> Result<()> {
@@ -9,12 +9,13 @@ fn main() -> Result<()> {
 }
 
 pub mod dkv {
-    use std::io::{self, Read};
     use std::net::{TcpListener, TcpStream};
+
+    use dkv_protocol::Command;
     pub struct Server {
         listener: TcpListener,
     }
-    type Result<T> = io::Result<T>;
+    type Result<T> = dkv_protocol::Result<T>;
     impl Server {
         pub fn new(listener: TcpListener) -> Server {
             Server { listener }
@@ -24,31 +25,14 @@ pub mod dkv {
             for stream in self.listener.incoming() {
                 println!("Accepted new connection");
                 let command = self.read_command(&mut stream?)?;
+                dbg!(command);
                 todo!()
             }
             Ok(())
         }
 
         fn read_command(&self, stream: &mut TcpStream) -> Result<Command> {
-            let mut buf = [0, 0, 0];
-            stream.read_exact(&mut buf)?;
-            match &buf {
-                b"PUT" => {
-                    todo!("PUT")
-                }
-                b"GET" => {
-                    todo!("GET")
-                }
-                b => {
-                    dbg!(String::from_utf8_lossy(b));
-                    todo!("Invalid command")
-                }
-            }
+            Command::read(stream)
         }
-    }
-
-    pub enum Command {
-        Put(Vec<u8>, Vec<u8>),
-        Get(Vec<u8>),
     }
 }

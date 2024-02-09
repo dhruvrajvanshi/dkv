@@ -12,6 +12,9 @@ dependencies = [
 [[package]]
 name = "dkv"
 version = "0.1.0"
+dependencies = [
+ "dkv_protocol",
+]
 
 [[package]]
 name = "dkv_protocol"

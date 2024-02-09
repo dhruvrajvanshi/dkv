@@ -1,3 +1,4 @@
+use dkv_protocol::{Result, Value};
 use std::net::TcpStream;
 
 fn main() -> dkv::Result<()> {
@@ -9,10 +10,11 @@ fn main() -> dkv::Result<()> {
     return Ok(());
 }
 mod dkv {
-    use std::net::TcpStream;
+    use dkv_protocol::{self, Value};
     use std::io::{self, Read, Write};
+    use std::net::TcpStream;
 
-    pub type Result<T> = io::Result<T>;
+    pub type Result<T> = dkv_protocol::Result<T>;
     pub struct Client {
         stream: TcpStream,
     }
@@ -41,37 +43,10 @@ mod dkv {
         }
 
         fn read_get_result(&mut self) -> Result<Option<Vec<u8>>> {
-            let mut buf = [0];
-            self.stream.read_exact(&mut buf)?;
-            match buf[0] {
-                b'-' => Ok(None),
-                b'$' => {
-                    let mut len = vec![];
-                    let mut b = [0];
-                    loop {
-                        self.stream.read_exact(&mut b)?;
-                        if b[0] == b'\r' {
-                            break;
-                        }
-                        len.push(b[0]);
-                    }
-                    self.stream.read_exact(&mut b)?;
-                    assert!(b[0] == b'\n');
-                    let len = String::from_utf8(len)
-                        .expect("Invalid length")
-                        .parse::<usize>()
-                        .expect("Invalid length");
-                    let mut value = vec![0; len];
-                    self.stream.read_exact(&mut value)?;
-                    let mut ignore = [0, 0];
-                    self.stream.read_exact(&mut ignore)?;
-                    assert!(&ignore == b"\r\n");
-                    Ok(Some(value))
-                }
-                _ => Err(std::io::Error::new(
-                    std::io::ErrorKind::InvalidData,
-                    "Invalid response",
-                )),
+            let value = Value::read(&mut self.stream)?;
+            match value {
+                Value::String(value) => Ok(Some(value.into_bytes())),
+                _ => panic!("Invalid value"),
             }
         }
     }

@@ -1,10 +1,14 @@
-use std::io::{self, Read};
+use std::io::{self, Read, Write};
 
 #[derive(Debug, PartialEq)]
 pub enum Value {
     String(String),
 }
 impl Value {
+    pub fn from(value: &str) -> Value {
+        Value::String(value.to_string())
+    }
+
     pub fn read<T: Read>(stream: &mut T) -> Result<Value> {
         let mut buf = [0];
         stream.read_exact(&mut buf)?;
@@ -37,6 +41,17 @@ impl Value {
             }
             _ => panic!("Invalid value"),
         }
+    }
+
+    pub fn write<T: Write>(&self, stream: &mut T) -> Result<()> {
+        match self {
+            Value::String(s) => {
+                write!(stream, "${}\r\n", s.len())?;
+                stream.write(s.as_bytes())?;
+                stream.write(b"\r\n")?;
+            }
+        }
+        Ok(())
     }
 }
 
@@ -73,6 +88,15 @@ mod tests {
         let input = b"$5\r\nhello\r\n";
         let result = Value::read(&mut &input[..])?;
         assert_eq!(Value::String("hello".to_string()), result);
+        Ok(())
+    }
+
+    #[test]
+    fn can_write_bulk_string() -> Result<()> {
+        let mut output: Vec<u8> = vec![];
+        let value = Value::String("hello".to_string());
+        value.write(&mut output)?;
+        assert_eq!(output, b"$5\r\nhello\r\n");
         Ok(())
     }
 }

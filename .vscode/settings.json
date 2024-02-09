@@ -1,0 +1,9 @@
+{
+    "[rust]": {
+        "editor.formatOnSave": true,
+        "editor.rulers": [80]
+    },
+    "[toml]": {
+        "editor.formatOnSave": true
+    }
+}

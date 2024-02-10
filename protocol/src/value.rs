@@ -1,0 +1,21 @@
+use crate::codec;
+
+#[derive(Debug, PartialEq, Clone)]
+pub enum Value {
+    String(String),
+    Array(Vec<Value>),
+    Null,
+}
+impl Value {
+    pub fn from(value: &str) -> Value {
+        Value::String(value.to_string())
+    }
+
+    pub fn write<T: std::io::Write>(&self, stream: &mut T) -> std::io::Result<()> {
+        codec::write(self, stream)
+    }
+
+    pub fn read<T: std::io::Read>(stream: &mut T) -> codec::Result<Value> {
+        codec::read(stream)
+    }
+}

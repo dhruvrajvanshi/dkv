@@ -2,37 +2,12 @@ mod codec;
 mod error;
 mod value;
 
-use std::io::{self, Read, Write};
+use std::io::{Read, Write};
 
 pub use codec::Result;
 pub use error::BadMessageError;
 pub use error::Error;
 pub use value::Value;
-
-pub struct LoggingStream<T: Write + Read> {
-    stream: T,
-}
-impl<T: Write + Read> LoggingStream<T> {
-    pub fn new(stream: T) -> LoggingStream<T> {
-        LoggingStream { stream }
-    }
-}
-impl<T: Write + Read> Write for LoggingStream<T> {
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        println!("w: {}", String::from_utf8_lossy(buf));
-        self.stream.write(buf)
-    }
-    fn flush(&mut self) -> io::Result<()> {
-        self.stream.flush()
-    }
-}
-impl<T: Write + Read> Read for LoggingStream<T> {
-    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        let n = self.stream.read(buf)?;
-        println!("r: {}", String::from_utf8_lossy(&buf[..n]));
-        Ok(n)
-    }
-}
 
 #[derive(Debug, PartialEq)]
 pub enum Command {

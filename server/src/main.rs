@@ -1,9 +1,16 @@
-use dkv_protocol::{BadMessageError, Command, Error, Value};
 use std::{
     collections::HashMap,
     io::{Read, Write},
     net::TcpListener,
 };
+mod codec;
+mod command;
+mod error;
+mod value;
+
+use command::Command;
+use error::{BadMessageError, Error};
+use value::Value;
 
 fn main() -> Result<()> {
     let mut server = Server::new(TcpListener::bind("0.0.0.0:6543")?);
@@ -16,7 +23,7 @@ pub struct Server {
     listener: TcpListener,
     map: HashMap<String, Value>,
 }
-type Result<T> = dkv_protocol::Result<T>;
+type Result<T> = codec::Result<T>;
 impl Server {
     pub fn new(listener: TcpListener) -> Server {
         Server {

@@ -1,13 +1,9 @@
-mod codec;
-mod error;
-mod value;
-
 use std::io::{Read, Write};
 
-pub use codec::Result;
-pub use error::BadMessageError;
-pub use error::Error;
-pub use value::Value;
+use crate::{
+    codec::{self, Result},
+    Error, Value,
+};
 
 #[derive(Debug, PartialEq)]
 pub enum Command {
@@ -15,7 +11,7 @@ pub enum Command {
     Get(String),
 }
 impl Command {
-    pub fn read<T: Read>(stream: &mut T) -> codec::Result<Command> {
+    pub fn read<T: Read>(stream: &mut T) -> Result<Command> {
         let command = codec::read(stream)?;
         match command {
             Value::Array(values) => {
@@ -87,70 +83,6 @@ impl Command {
                 codec::write(&array, stream)?;
             }
         }
-        Ok(())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn can_parse_bulk_string() -> Result<()> {
-        let input = b"$5\r\nhello\r\n";
-        let result = codec::read(&mut &input[..])?;
-        assert_eq!(Value::String("hello".to_string()), result);
-        Ok(())
-    }
-
-    #[test]
-    fn can_write_bulk_string() -> Result<()> {
-        let mut output: Vec<u8> = vec![];
-        let value = Value::String("hello".to_string());
-        codec::write(&value, &mut output)?;
-        assert_eq!(output, b"$5\r\nhello\r\n");
-        Ok(())
-    }
-
-    #[test]
-    fn can_read_and_write_commands() -> Result<()> {
-        let mut output: Vec<u8> = vec![];
-        let command = Command::Set("key".to_owned(), Value::from("value"));
-        command.write(&mut output)?;
-
-        let read_command = Command::read(&mut &output[..])?;
-        assert_eq!(read_command, command);
-        Ok(())
-    }
-
-    #[test]
-    fn can_read_simple_strings() -> Result<()> {
-        let input = b"+OK\r\n";
-        let result = codec::read(&mut &input[..])?;
-        assert_eq!(Value::from("OK"), result);
-        Ok(())
-    }
-
-    #[test]
-    fn can_read_and_write_nil() -> Result<()> {
-        let input = b"_\r\n";
-        let result = codec::read(&mut &input[..])?;
-        assert_eq!(Value::Null, result);
-
-        let mut output: Vec<u8> = vec![];
-        codec::write(&Value::Null, &mut output)?;
-        assert_eq!(output, b"_\r\n");
-        Ok(())
-    }
-
-    #[test]
-    fn can_read_and_write_arrays() -> Result<()> {
-        let input = b"*3\r\n$3\r\nfoo\r\n$3\r\nbar\r\n_\r\n";
-        let result = codec::read(&mut &input[..])?;
-        assert_eq!(
-            Value::Array(vec![Value::from("foo"), Value::from("bar"), Value::Null]),
-            result
-        );
         Ok(())
     }
 }

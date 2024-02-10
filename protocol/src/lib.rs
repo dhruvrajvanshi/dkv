@@ -1,8 +1,33 @@
 use std::io::{self, Read, Write};
+pub struct LoggingStream<T: Write + Read> {
+    stream: T,
+}
+impl<T: Write + Read> LoggingStream<T> {
+    pub fn new(stream: T) -> LoggingStream<T> {
+        LoggingStream { stream }
+    }
+}
+impl<T: Write + Read> Write for LoggingStream<T> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        println!("w: {}", String::from_utf8_lossy(buf));
+        self.stream.write(buf)
+    }
+    fn flush(&mut self) -> io::Result<()> {
+        self.stream.flush()
+    }
+}
+impl<T: Write + Read> Read for LoggingStream<T> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        let n = self.stream.read(buf)?;
+        println!("r: {}", String::from_utf8_lossy(&buf[..n]));
+        Ok(n)
+    }
+}
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq, Hash, Clone)]
 pub enum Value {
     String(String),
+    Null,
 }
 impl Value {
     pub fn from(value: &str) -> Value {
@@ -32,15 +57,47 @@ impl Value {
                     .map_err(|_| Error::BadMessage(BadMessageError::InvalidLength(len)))?;
                 let mut value = vec![0; len];
                 stream.read_exact(&mut value)?;
-                let mut ignore = [0, 0];
-                stream.read_exact(&mut ignore)?;
-                assert!(&ignore == b"\r\n", "Invalid terminator");
-                Ok(Value::String(String::from_utf8(value).map_err(|it| {
-                    Error::BadMessage(BadMessageError::Utf8(it))
-                })?))
+                Self::expect_newline(stream)?;
+                let value = String::from_utf8(value)
+                    .map_err(|it| Error::BadMessage(BadMessageError::Utf8(it)))?;
+                let value = Value::String(value);
+                Ok(value)
+            }
+            b'_' => {
+                Self::expect_newline(stream)?;
+                Ok(Value::Null)
+            }
+            b'-' => {
+                Self::expect_newline(stream)?;
+                Ok(Value::Null)
+            }
+            b'+' => {
+                let mut value = vec![];
+                let mut b = [0];
+                loop {
+                    stream.read_exact(&mut b)?;
+                    if b[0] == b'\r' {
+                        break;
+                    }
+                    value.push(b[0]);
+                }
+                stream.read_exact(&mut b)?;
+                assert!(b[0] == b'\n');
+                let value = String::from_utf8(value)
+                    .map_err(|it| Error::BadMessage(BadMessageError::Utf8(it)))?;
+                Ok(Value::String(value))
             }
             _ => panic!("Invalid value"),
         }
+    }
+
+    fn expect_newline<T: Read>(stream: &mut T) -> Result<()> {
+        let mut b = [0];
+        stream.read_exact(&mut b)?;
+        assert!(b[0] == b'\r');
+        stream.read_exact(&mut b)?;
+        assert!(b[0] == b'\n');
+        Ok(())
     }
 
     pub fn write<T: Write>(&self, stream: &mut T) -> Result<()> {
@@ -49,6 +106,9 @@ impl Value {
                 write!(stream, "${}\r\n", s.len())?;
                 stream.write(s.as_bytes())?;
                 stream.write(b"\r\n")?;
+            }
+            Value::Null => {
+                stream.write(b"_\r\n")?;
             }
         }
         Ok(())
@@ -59,6 +119,7 @@ impl Value {
 pub enum BadMessageError {
     InvalidLength(String),
     Utf8(std::string::FromUtf8Error),
+    InvalidCommand(String),
 }
 #[derive(Debug)]
 pub enum Error {
@@ -75,7 +136,7 @@ pub type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Debug, PartialEq)]
 pub enum Command {
-    Put(Value, Value),
+    Set(Value, Value),
     Get(Value),
 }
 impl Command {
@@ -83,17 +144,20 @@ impl Command {
         let command = Value::read(stream)?;
         match command {
             Value::String(s) => match s.as_str() {
-                "PUT" => Ok(Command::Put(Value::read(stream)?, Value::read(stream)?)),
+                "SET" => Ok(Command::Set(Value::read(stream)?, Value::read(stream)?)),
                 "GET" => Ok(Command::Get(Value::read(stream)?)),
                 _ => Err(Error::BadMessage(BadMessageError::InvalidLength(s))),
             },
+            Value::Null => Err(Error::BadMessage(BadMessageError::InvalidCommand(
+                String::from("-"),
+            ))),
         }
     }
 
     pub fn write<T: Write>(&self, stream: &mut T) -> Result<()> {
         match self {
-            Command::Put(key, value) => {
-                Value::from("PUT").write(stream)?;
+            Command::Set(key, value) => {
+                Value::from("SET").write(stream)?;
                 key.write(stream)?;
                 value.write(stream)?;
             }
@@ -130,11 +194,31 @@ mod tests {
     #[test]
     fn can_read_and_write_commands() -> Result<()> {
         let mut output: Vec<u8> = vec![];
-        let command = Command::Put(Value::from("key"), Value::from("value"));
+        let command = Command::Set(Value::from("key"), Value::from("value"));
         command.write(&mut output)?;
 
         let read_command = Command::read(&mut &output[..])?;
         assert_eq!(read_command, command);
+        Ok(())
+    }
+
+    #[test]
+    fn can_read_simple_strings() -> Result<()> {
+        let input = b"+OK\r\n";
+        let result = Value::read(&mut &input[..])?;
+        assert_eq!(Value::from("OK"), result);
+        Ok(())
+    }
+
+    #[test]
+    fn can_read_and_write_nil() -> Result<()> {
+        let input = b"_\r\n";
+        let result = Value::read(&mut &input[..])?;
+        assert_eq!(Value::Null, result);
+
+        let mut output: Vec<u8> = vec![];
+        Value::Null.write(&mut output)?;
+        assert_eq!(output, b"_\r\n");
         Ok(())
     }
 }

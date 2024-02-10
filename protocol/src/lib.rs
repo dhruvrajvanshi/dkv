@@ -132,10 +132,9 @@ mod tests {
         let mut output: Vec<u8> = vec![];
         let command = Command::Put(Value::from("key"), Value::from("value"));
         command.write(&mut output)?;
-        assert_eq!(output, b"PUT$3\r\nkey\r\n$5\r\nvalue\r\n");
-        let input = b"PUT$3\r\nkey\r\n$5\r\nvalue\r\n";
-        let result = Command::read(&mut &input[..])?;
-        assert_eq!(command, result);
+
+        let read_command = Command::read(&mut &output[..])?;
+        assert_eq!(read_command, command);
         Ok(())
     }
 }

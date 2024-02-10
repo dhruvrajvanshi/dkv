@@ -1,44 +1,49 @@
 use dkv_protocol::{self, Value};
-use std::{
-    io::{Read, Write},
-    net::TcpStream,
-};
+use std::net::TcpStream;
 
-type Result<T> = dkv_protocol::Result<T>;
+pub type Result<T> = dkv_protocol::Result<T>;
 
 fn main() -> Result<()> {
-    let stream = TcpStream::connect("localhost:6543")?;
-    let mut djs = Client::new(stream);
+    let mut djs = Client::new("localhost:6543");
     djs.set(Value::from("key"), Value::from("value"))?;
-    let stream = TcpStream::connect("localhost:6543")?;
-    let mut djs = Client::new(stream);
     let value = djs.get(Value::from("key"))?;
     assert_eq!(value, Value::from("value"));
     Ok(())
 }
-pub struct Client<T: Write + Read> {
-    stream: T,
+pub struct Client {
+    address: String,
 }
-impl<T: Write + Read> Client<T> {
-    pub fn new(stream: T) -> Client<T> {
-        Client { stream }
+impl Client {
+    pub fn new<T: Into<String>>(address: T) -> Client {
+        Client {
+            address: address.into(),
+        }
     }
 
     pub fn set(&mut self, key: Value, value: Value) -> Result<()> {
-        self.write(Value::from("SET"))?;
-        self.write(key)?;
-        self.write(value)?;
-        assert_eq!(Value::read(&mut self.stream)?, Value::from("OK"));
-        return Ok(());
+        self.with_connection(|stream| {
+            Value::from("SET").write(stream)?;
+            key.write(stream)?;
+            value.write(stream)?;
+            assert_eq!(Value::read(stream)?, Value::from("OK"));
+            Ok(())
+        })
     }
     pub fn get(&mut self, key: Value) -> Result<Value> {
-        self.write(Value::from("GET"))?;
-        self.write(key)?;
-        let result = Value::read(&mut self.stream)?;
-        Ok(result)
+        self.with_connection(|stream| -> Result<Value> {
+            Value::from("GET").write(stream)?;
+            key.write(stream)?;
+            let result = Value::read(stream)?;
+            Ok(result)
+        })
     }
 
-    fn write(&mut self, value: Value) -> Result<()> {
-        value.write(&mut self.stream)
+    fn with_connection<F, T>(&mut self, f: F) -> Result<T>
+    where
+        F: FnOnce(&mut TcpStream) -> Result<T>,
+    {
+        let mut stream = TcpStream::connect(&self.address)?;
+        let result = f(&mut stream);
+        result
     }
 }

@@ -1,4 +1,7 @@
-use std::io::{self, Read, Write};
+use std::{
+    collections::HashMap,
+    io::{self, Read, Write},
+};
 
 use crate::{
     error::{BadMessageError, Error},
@@ -11,16 +14,7 @@ pub fn read<T: Read>(stream: &mut T) -> Result<Value> {
     let mut buf = [0];
     stream.read_exact(&mut buf)?;
     match buf[0] {
-        b'$' => {
-            let len = parse_length(stream)?;
-            let mut value = vec![0; len];
-            stream.read_exact(&mut value)?;
-            expect_newline(stream)?;
-            let value = String::from_utf8(value)
-                .map_err(|it| Error::BadMessage(BadMessageError::Utf8(it)))?;
-            let value = Value::String(value);
-            Ok(value)
-        }
+        b'$' => Ok(Value::String(read_bulk_string_tail(stream)?)),
         b'_' => {
             expect_newline(stream)?;
             Ok(Value::Null)
@@ -53,6 +47,16 @@ pub fn read<T: Read>(stream: &mut T) -> Result<Value> {
             }
             Ok(Value::Array(values))
         }
+        b'%' => {
+            let len = parse_length(stream)?;
+            let mut map = HashMap::new();
+            for _ in 0..len {
+                let key = read_bulk_string(stream)?;
+                let value = read(stream)?;
+                map.insert(key, value);
+            }
+            Ok(Value::Map(map))
+        }
         c => Err(Error::UnexpectedStartOfValue(c as char)),
     }
 }
@@ -77,6 +81,13 @@ pub fn write<T: Write>(value: &Value, stream: &mut T) -> io::Result<()> {
         Value::Array(values) => {
             write!(stream, "*{}\r\n", values.len())?;
             for value in values {
+                write(value, stream)?;
+            }
+        }
+        Value::Map(map) => {
+            write!(stream, "%{}\r\n", map.len())?;
+            for (key, value) in map {
+                write_bulk_string(stream, key.as_str())?;
                 write(value, stream)?;
             }
         }
@@ -106,4 +117,44 @@ fn write_bulk_string<T: Write>(stream: &mut T, s: &str) -> io::Result<()> {
     stream.write(s.as_bytes())?;
     stream.write(b"\r\n")?;
     Ok(())
+}
+fn read_bulk_string_tail<T: Read>(stream: &mut T) -> Result<String> {
+    let len = parse_length(stream)?;
+    let mut value = vec![0; len];
+    stream.read_exact(&mut value)?;
+    expect_newline(stream)?;
+    String::from_utf8(value).map_err(|it| Error::BadMessage(BadMessageError::Utf8(it)))
+}
+
+fn read_bulk_string<T: Read>(stream: &mut T) -> Result<String> {
+    let mut buf = [0];
+    stream.read_exact(&mut buf)?;
+    if buf[0] != b'$' {
+        return Err(Error::generic("Expected a string", format!("{:?}", buf[0])));
+    }
+    read_bulk_string_tail(stream)
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    #[test]
+    fn can_read_and_write_map() {
+        let mut map = std::collections::HashMap::new();
+        map.insert("hello".to_string(), Value::String("world".to_string()));
+        let mut buf = vec![];
+        write(&Value::Map(map), &mut buf).unwrap();
+
+        dbg!(String::from_utf8_lossy(&buf));
+        let value = read(&mut &buf[..]).expect("Foo");
+        if let Value::Map(map) = value {
+            assert_eq!(map.len(), 1);
+            assert_eq!(
+                map.get("hello").unwrap(),
+                &Value::String("world".to_string())
+            );
+        } else {
+            panic!("Expected a map");
+        }
+    }
 }

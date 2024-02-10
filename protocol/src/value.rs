@@ -1,9 +1,12 @@
+use std::collections::HashMap;
+
 use crate::codec;
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum Value {
     String(String),
     Array(Vec<Value>),
+    Map(HashMap<String, Value>),
     Null,
 }
 impl Value {

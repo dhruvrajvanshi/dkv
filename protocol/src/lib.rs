@@ -87,7 +87,7 @@ impl Value {
                     .map_err(|it| Error::BadMessage(BadMessageError::Utf8(it)))?;
                 Ok(Value::String(value))
             }
-            _ => panic!("Invalid value"),
+            c => Err(Error::UnexpectedStartOfValue(c as char)),
         }
     }
 
@@ -125,6 +125,7 @@ pub enum BadMessageError {
 pub enum Error {
     Io(io::Error),
     BadMessage(BadMessageError),
+    UnexpectedStartOfValue(char),
 }
 impl From<io::Error> for Error {
     fn from(e: io::Error) -> Error {

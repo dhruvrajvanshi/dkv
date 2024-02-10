@@ -44,7 +44,16 @@ impl<T: Write + Read> Connection<'_, T> {
     pub fn new<'a>(map: &'a mut HashMap<Value, Value>, stream: T) -> Connection<'a, T> {
         Connection { map, stream }
     }
-    pub fn handle(&mut self) -> Result<()> {
+    pub fn handle(&mut self) -> std::io::Result<()> {
+        match self._handle() {
+            Ok(()) => Ok(()),
+            Err(e) => {
+                eprintln!("Error: {:?}", e);
+                self.stream.write(b"-ERROR\r\n").map(|_| ())
+            }
+        }
+    }
+    fn _handle(&mut self) -> Result<()> {
         let command = Command::read(&mut self.stream)?;
         match command {
             Command::Set(key, value) => {

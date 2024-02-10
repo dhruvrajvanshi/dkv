@@ -1,4 +1,4 @@
-use dkv_protocol::{Command, Value};
+use dkv_protocol::{BadMessageError, Command, Error, Value};
 use std::{
     collections::HashMap,
     io::{Read, Write},
@@ -40,6 +40,22 @@ pub struct Connection<'a, T: Write + Read> {
     map: &'a mut HashMap<Value, Value>,
     stream: T,
 }
+fn to_simple_string(e: Error) -> String {
+    match e {
+        // there's no guarantee that io::Error contains characters that are safe
+        // to send as part of a simple string, so we'll just send a generic error
+        // Besides, this is treated as a server error, not client error.
+        Error::Io(_) => String::from("Internal server error"),
+        Error::BadMessage(BadMessageError::InvalidCommand(_)) => String::from("Invalid command"),
+        Error::BadMessage(BadMessageError::InvalidLength(_)) => {
+            String::from("Invalid length for a bulk string")
+        }
+        Error::BadMessage(BadMessageError::Utf8(_)) => String::from("Invalid UTF-8"),
+        Error::UnexpectedStartOfValue(c) => {
+            format!("Unexpected start of value: {}", c)
+        }
+    }
+}
 impl<T: Write + Read> Connection<'_, T> {
     pub fn new<'a>(map: &'a mut HashMap<Value, Value>, stream: T) -> Connection<'a, T> {
         Connection { map, stream }
@@ -49,7 +65,7 @@ impl<T: Write + Read> Connection<'_, T> {
             Ok(()) => Ok(()),
             Err(e) => {
                 eprintln!("Error: {:?}", e);
-                self.stream.write(b"-ERROR\r\n").map(|_| ())
+                write!(self.stream, "-ERROR: {}\r\n", to_simple_string(e))
             }
         }
     }

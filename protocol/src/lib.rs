@@ -1,4 +1,7 @@
-use std::io::{self, Read, Write};
+use std::{
+    io::{self, Read, Write},
+    path::Display,
+};
 pub struct LoggingStream<T: Write + Read> {
     stream: T,
 }

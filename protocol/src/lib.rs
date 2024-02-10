@@ -24,7 +24,7 @@ impl<T: Write + Read> Read for LoggingStream<T> {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Hash, Clone)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Value {
     String(String),
     Array(Vec<Value>),
@@ -97,9 +97,7 @@ impl Value {
     pub fn write<T: Write>(&self, stream: &mut T) -> Result<()> {
         match self {
             Value::String(s) => {
-                write!(stream, "${}\r\n", s.len())?;
-                stream.write(s.as_bytes())?;
-                stream.write(b"\r\n")?;
+                write_bulk_string(stream, s.as_str())?;
             }
             Value::Null => {
                 stream.write(b"_\r\n")?;
@@ -170,8 +168,8 @@ pub type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Debug, PartialEq)]
 pub enum Command {
-    Set(Value, Value),
-    Get(Value),
+    Set(String, Value),
+    Get(String),
 }
 impl Command {
     pub fn read<T: Read>(stream: &mut T) -> Result<Command> {
@@ -195,7 +193,14 @@ impl Command {
                                     "",
                                 ));
                             }
-                            Ok(Command::Set(values[1].clone(), values[2].clone()))
+                            if let Value::String(v) = values[1].clone() {
+                                Ok(Command::Set(v, values[2].clone()))
+                            } else {
+                                return Err(Error::generic(
+                                    "First argument of a set command must be a string",
+                                    "",
+                                ));
+                            }
                         }
                         "GET" => {
                             if values.len() != 2 {
@@ -204,7 +209,14 @@ impl Command {
                                     "",
                                 ));
                             }
-                            Ok(Command::Get(values[1].clone()))
+                            if let Value::String(v) = values[1].clone() {
+                                Ok(Command::Get(v))
+                            } else {
+                                Err(Error::generic(
+                                    "First argument of a get command must be a string",
+                                    "",
+                                ))
+                            }
                         }
                         c => Err(Error::generic("Invalid command", c)),
                     },
@@ -218,17 +230,26 @@ impl Command {
     pub fn write<T: Write>(&self, stream: &mut T) -> Result<()> {
         match self {
             Command::Set(key, value) => {
-                Value::from("SET").write(stream)?;
-                key.write(stream)?;
-                value.write(stream)?;
+                Value::Array(vec![
+                    Value::from("SET"),
+                    Value::String(key.clone()),
+                    value.clone(),
+                ])
+                .write(stream)?;
             }
             Command::Get(key) => {
-                Value::from("GET").write(stream)?;
-                key.write(stream)?;
+                Value::Array(vec![Value::from("GET"), Value::String(key.clone())]).write(stream)?;
             }
         }
         Ok(())
     }
+}
+
+fn write_bulk_string<T: Write>(stream: &mut T, s: &str) -> io::Result<()> {
+    write!(stream, "${}\r\n", s.len())?;
+    stream.write(s.as_bytes())?;
+    stream.write(b"\r\n")?;
+    Ok(())
 }
 
 #[cfg(test)]
@@ -255,7 +276,7 @@ mod tests {
     #[test]
     fn can_read_and_write_commands() -> Result<()> {
         let mut output: Vec<u8> = vec![];
-        let command = Command::Set(Value::from("key"), Value::from("value"));
+        let command = Command::Set("key".to_owned(), Value::from("value"));
         command.write(&mut output)?;
 
         let read_command = Command::read(&mut &output[..])?;

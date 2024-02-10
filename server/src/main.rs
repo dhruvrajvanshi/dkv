@@ -14,7 +14,7 @@ fn main() -> Result<()> {
 
 pub struct Server {
     listener: TcpListener,
-    map: HashMap<Value, Value>,
+    map: HashMap<String, Value>,
 }
 type Result<T> = dkv_protocol::Result<T>;
 impl Server {
@@ -37,7 +37,7 @@ impl Server {
 }
 
 pub struct Connection<'a, T: Write + Read> {
-    map: &'a mut HashMap<Value, Value>,
+    map: &'a mut HashMap<String, Value>,
     stream: T,
 }
 fn to_simple_string(e: Error) -> String {
@@ -62,7 +62,7 @@ enum ConnectionResult {
     Continue,
 }
 impl<T: Write + Read> Connection<'_, T> {
-    pub fn new<'a>(map: &'a mut HashMap<Value, Value>, stream: T) -> Connection<'a, T> {
+    pub fn new<'a>(map: &'a mut HashMap<String, Value>, stream: T) -> Connection<'a, T> {
         Connection { map, stream }
     }
     pub fn handle(&mut self) -> std::io::Result<()> {

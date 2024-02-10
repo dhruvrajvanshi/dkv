@@ -1,7 +1,4 @@
-use std::{
-    io::{self, Read, Write},
-    path::Display,
-};
+use std::io::{self, Read, Write};
 pub struct LoggingStream<T: Write + Read> {
     stream: T,
 }
@@ -30,6 +27,7 @@ impl<T: Write + Read> Read for LoggingStream<T> {
 #[derive(Debug, PartialEq, Eq, Hash, Clone)]
 pub enum Value {
     String(String),
+    Array(Vec<Value>),
     Null,
 }
 impl Value {
@@ -42,22 +40,7 @@ impl Value {
         stream.read_exact(&mut buf)?;
         match buf[0] {
             b'$' => {
-                let mut len = vec![];
-                let mut b = [0];
-                loop {
-                    stream.read_exact(&mut b)?;
-                    if b[0] == b'\r' {
-                        break;
-                    }
-                    len.push(b[0]);
-                }
-                stream.read_exact(&mut b)?;
-                assert!(b[0] == b'\n');
-                let len = String::from_utf8(len)
-                    .map_err(|it| Error::BadMessage(BadMessageError::Utf8(it)))?;
-                let len = len
-                    .parse::<usize>()
-                    .map_err(|_| Error::BadMessage(BadMessageError::InvalidLength(len)))?;
+                let len = parse_length(stream)?;
                 let mut value = vec![0; len];
                 stream.read_exact(&mut value)?;
                 Self::expect_newline(stream)?;
@@ -90,6 +73,14 @@ impl Value {
                     .map_err(|it| Error::BadMessage(BadMessageError::Utf8(it)))?;
                 Ok(Value::String(value))
             }
+            b'*' => {
+                let len = parse_length(stream)?;
+                let mut values = vec![];
+                for _ in 0..len {
+                    values.push(Value::read(stream)?);
+                }
+                Ok(Value::Array(values))
+            }
             c => Err(Error::UnexpectedStartOfValue(c as char)),
         }
     }
@@ -113,9 +104,32 @@ impl Value {
             Value::Null => {
                 stream.write(b"_\r\n")?;
             }
+            Value::Array(values) => {
+                write!(stream, "*{}\r\n", values.len())?;
+                for value in values {
+                    value.write(stream)?;
+                }
+            }
         }
         Ok(())
     }
+}
+
+fn parse_length<T: Read>(stream: &mut T) -> Result<usize> {
+    let mut len = vec![];
+    let mut b = [0];
+    loop {
+        stream.read_exact(&mut b)?;
+        if b[0] == b'\r' {
+            break;
+        }
+        len.push(b[0]);
+    }
+    stream.read_exact(&mut b)?;
+    assert!(b[0] == b'\n');
+    let len = String::from_utf8(len).map_err(|it| Error::BadMessage(BadMessageError::Utf8(it)))?;
+    len.parse::<usize>()
+        .map_err(|_| Error::BadMessage(BadMessageError::InvalidLength(len)))
 }
 
 #[derive(Debug)]
@@ -123,12 +137,28 @@ pub enum BadMessageError {
     InvalidLength(String),
     Utf8(std::string::FromUtf8Error),
     InvalidCommand(String),
+    /**
+     * First argument is the error message sent to the client.
+     * Must be a simple string (i.e. no newlines)
+     * Second argument is only used by the server for debugging
+     */
+    Generic(String, String),
 }
 #[derive(Debug)]
 pub enum Error {
     Io(io::Error),
     BadMessage(BadMessageError),
     UnexpectedStartOfValue(char),
+}
+impl Error {
+    pub fn generic<S: Into<String>, S2: Into<String>>(s: S, internal: S2) -> Error {
+        let string: String = s.into();
+        assert!(
+            !string.contains("\r") && !string.contains("\n"),
+            "Generic error strings must not contain newlines"
+        );
+        Error::BadMessage(BadMessageError::Generic(string, internal.into()))
+    }
 }
 impl From<io::Error> for Error {
     fn from(e: io::Error) -> Error {
@@ -147,14 +177,41 @@ impl Command {
     pub fn read<T: Read>(stream: &mut T) -> Result<Command> {
         let command = Value::read(stream)?;
         match command {
-            Value::String(s) => match s.as_str() {
-                "SET" => Ok(Command::Set(Value::read(stream)?, Value::read(stream)?)),
-                "GET" => Ok(Command::Get(Value::read(stream)?)),
-                _ => Err(Error::BadMessage(BadMessageError::InvalidLength(s))),
-            },
-            Value::Null => Err(Error::BadMessage(BadMessageError::InvalidCommand(
-                String::from("-"),
-            ))),
+            Value::Array(values) => {
+                if values.len() == 0 {
+                    return Err(Error::generic(
+                        "Empty array is not a valid command",
+                        "".to_string(),
+                    ));
+                }
+
+                let command = &values[0];
+                match command {
+                    Value::String(s) => match s.as_str() {
+                        "SET" => {
+                            if values.len() != 3 {
+                                return Err(Error::generic(
+                                    "SET command must have 2 arguments",
+                                    "",
+                                ));
+                            }
+                            Ok(Command::Set(values[1].clone(), values[2].clone()))
+                        }
+                        "GET" => {
+                            if values.len() != 2 {
+                                return Err(Error::generic(
+                                    "GET command must have 1 argument".to_string(),
+                                    "",
+                                ));
+                            }
+                            Ok(Command::Get(values[1].clone()))
+                        }
+                        c => Err(Error::generic("Invalid command", c)),
+                    },
+                    _ => Err(Error::generic("Command must be a string", "")),
+                }
+            }
+            _ => Err(Error::generic("Command must be an array", "")),
         }
     }
 
@@ -223,6 +280,17 @@ mod tests {
         let mut output: Vec<u8> = vec![];
         Value::Null.write(&mut output)?;
         assert_eq!(output, b"_\r\n");
+        Ok(())
+    }
+
+    #[test]
+    fn can_read_and_write_arrays() -> Result<()> {
+        let input = b"*3\r\n$3\r\nfoo\r\n$3\r\nbar\r\n_\r\n";
+        let result = Value::read(&mut &input[..])?;
+        assert_eq!(
+            Value::Array(vec![Value::from("foo"), Value::from("bar"), Value::Null]),
+            result
+        );
         Ok(())
     }
 }

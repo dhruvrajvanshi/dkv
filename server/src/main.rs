@@ -50,6 +50,7 @@ fn to_simple_string(e: Error) -> String {
         Error::BadMessage(BadMessageError::InvalidLength(_)) => {
             String::from("Invalid length for a bulk string")
         }
+        Error::BadMessage(BadMessageError::Generic(s, _)) => s,
         Error::BadMessage(BadMessageError::Utf8(_)) => String::from("Invalid UTF-8"),
         Error::UnexpectedStartOfValue(c) => {
             format!("Unexpected start of value: {}", c)

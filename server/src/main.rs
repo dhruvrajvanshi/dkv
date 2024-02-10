@@ -57,32 +57,42 @@ fn to_simple_string(e: Error) -> String {
         }
     }
 }
+enum ConnectionResult {
+    Exit,
+    Continue,
+}
 impl<T: Write + Read> Connection<'_, T> {
     pub fn new<'a>(map: &'a mut HashMap<Value, Value>, stream: T) -> Connection<'a, T> {
         Connection { map, stream }
     }
     pub fn handle(&mut self) -> std::io::Result<()> {
-        match self._handle() {
-            Ok(()) => Ok(()),
-            Err(e) => {
-                eprintln!("Error: {:?}", e);
-                write!(self.stream, "-ERROR: {}\r\n", to_simple_string(e))
+        loop {
+            match self._handle() {
+                Ok(ConnectionResult::Continue) => {}
+                Ok(ConnectionResult::Exit) => break,
+                Err(e) => {
+                    eprintln!("Error: {:?}", e);
+                    write!(self.stream, "-ERROR: {}\r\n", to_simple_string(e))?;
+                    ()
+                }
             }
         }
+        Ok(())
     }
-    fn _handle(&mut self) -> Result<()> {
+    fn _handle(&mut self) -> Result<ConnectionResult> {
         let command = Command::read(&mut self.stream)?;
-        match command {
+        Ok(match command {
             Command::Set(key, value) => {
                 self.map.insert(key, value);
                 Self::write_simple_string(&mut self.stream, "OK")?;
+                ConnectionResult::Continue
             }
             Command::Get(key) => {
                 let value = self.map.get(&key).map_or(Value::Null, |v| v.clone());
                 value.write(&mut self.stream)?;
+                ConnectionResult::Continue
             }
-        }
-        Ok(())
+        })
     }
 
     fn write_simple_string(stream: &mut T, s: &str) -> Result<()> {

@@ -71,6 +71,8 @@ impl Command {
         }
     }
 
+    // This will be used in the client API so I'm not removing it
+    #[allow(dead_code)]
     pub fn write<T: Write>(&self, stream: &mut T) -> Result<()> {
         match self {
             Command::Set(key, value) => {

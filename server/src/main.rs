@@ -66,10 +66,7 @@ fn to_simple_string(e: Error) -> String {
         }
     }
 }
-enum ConnectionResult {
-    Exit,
-    Continue,
-}
+
 impl<T: Write + Read> Connection<'_, T> {
     pub fn new<'a>(map: &'a mut HashMap<String, Value>, stream: T) -> Connection<'a, T> {
         Connection { map, stream }
@@ -77,8 +74,7 @@ impl<T: Write + Read> Connection<'_, T> {
     pub fn handle(&mut self) -> std::io::Result<()> {
         loop {
             match self._handle() {
-                Ok(ConnectionResult::Continue) => {}
-                Ok(ConnectionResult::Exit) => break,
+                Ok(()) => {}
                 Err(Error::Io(ref e)) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
                     // When redis-cli quits, it just closes the connection,
                     // which means when we try to read the next command, we get
@@ -95,18 +91,16 @@ impl<T: Write + Read> Connection<'_, T> {
         }
         Ok(())
     }
-    fn _handle(&mut self) -> Result<ConnectionResult> {
+    fn _handle(&mut self) -> Result<()> {
         let command = Command::read(&mut self.stream)?;
         Ok(match command {
             Command::Set(key, value) => {
                 self.map.insert(key, value);
                 Self::write_simple_string(&mut self.stream, "OK")?;
-                ConnectionResult::Continue
             }
             Command::Get(key) => {
                 let value = self.map.get(&key).map_or(Value::Null, |v| v.clone());
                 value.write(&mut self.stream)?;
-                ConnectionResult::Continue
             }
             Command::Command(args) => {
                 if args[0].clone().as_str() == Some("DOCS") {
@@ -120,7 +114,6 @@ impl<T: Write + Read> Connection<'_, T> {
                 } else {
                     todo!("Unimplement COMMAND {:?}", args[0])
                 }
-                ConnectionResult::Continue
             }
         })
     }

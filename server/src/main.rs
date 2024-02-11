@@ -79,6 +79,13 @@ impl<T: Write + Read> Connection<'_, T> {
             match self._handle() {
                 Ok(ConnectionResult::Continue) => {}
                 Ok(ConnectionResult::Exit) => break,
+                Err(Error::Io(ref e)) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
+                    // When redis-cli quits, it just closes the connection,
+                    // which means when we try to read the next command, we get
+                    // an UnexpectedEof error. We should just break the loop to
+                    // handle this case.
+                    break;
+                }
                 Err(e) => {
                     eprintln!("Error: {:?}", e);
                     write!(self.stream, "-ERROR: {}\r\n", to_simple_string(e))?;

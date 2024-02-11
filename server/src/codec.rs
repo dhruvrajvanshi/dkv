@@ -76,7 +76,7 @@ pub fn write<T: Write>(value: &Value, stream: &mut T) -> io::Result<()> {
             write_bulk_string(stream, s.as_str())?;
         }
         Value::Null => {
-            stream.write(b"_\r\n")?;
+            stream.write_all(b"_\r\n")?;
         }
         Value::Array(values) => {
             write!(stream, "*{}\r\n", values.len())?;
@@ -114,8 +114,8 @@ fn parse_length<T: Read>(stream: &mut T) -> Result<usize> {
 
 fn write_bulk_string<T: Write>(stream: &mut T, s: &str) -> io::Result<()> {
     write!(stream, "${}\r\n", s.len())?;
-    stream.write(s.as_bytes())?;
-    stream.write(b"\r\n")?;
+    stream.write_all(s.as_bytes())?;
+    stream.write_all(b"\r\n")?;
     Ok(())
 }
 fn read_bulk_string_tail<T: Read>(stream: &mut T) -> Result<String> {

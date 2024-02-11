@@ -16,7 +16,7 @@ impl Command {
         let command = codec::read(stream)?;
         match command {
             Value::Array(values) => {
-                if values.len() == 0 {
+                if values.is_empty() {
                     return Err(Error::generic(
                         "Empty array is not a valid command",
                         "".to_string(),
@@ -36,10 +36,10 @@ impl Command {
                             if let Value::String(v) = values[1].clone() {
                                 Ok(Command::Set(v, values[2].clone()))
                             } else {
-                                return Err(Error::generic(
+                                Err(Error::generic(
                                     "First argument of a set command must be a string",
                                     "",
-                                ));
+                                ))
                             }
                         }
                         "GET" => {

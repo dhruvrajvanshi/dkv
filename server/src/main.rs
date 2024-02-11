@@ -68,7 +68,7 @@ fn to_simple_string(e: Error) -> String {
 }
 
 impl<T: Write + Read> Connection<'_, T> {
-    pub fn new<'a>(map: &'a mut HashMap<String, Value>, stream: T) -> Connection<'a, T> {
+    pub fn new(map: &mut HashMap<String, Value>, stream: T) -> Connection<'_, T> {
         Connection { map, stream }
     }
     pub fn handle(&mut self) -> std::io::Result<()> {
@@ -85,7 +85,6 @@ impl<T: Write + Read> Connection<'_, T> {
                 Err(e) => {
                     eprintln!("Error: {:?}", e);
                     write!(self.stream, "-ERROR: {}\r\n", to_simple_string(e))?;
-                    ()
                 }
             }
         }
@@ -93,7 +92,7 @@ impl<T: Write + Read> Connection<'_, T> {
     }
     fn _handle(&mut self) -> Result<()> {
         let command = Command::read(&mut self.stream)?;
-        Ok(match command {
+        match command {
             Command::Set(key, value) => {
                 self.map.insert(key, value);
                 Self::write_simple_string(&mut self.stream, "OK")?;
@@ -115,7 +114,8 @@ impl<T: Write + Read> Connection<'_, T> {
                     todo!("Unimplement COMMAND {:?}", args[0])
                 }
             }
-        })
+        }
+        Ok(())
     }
 
     fn write_simple_string(stream: &mut T, s: &str) -> Result<()> {

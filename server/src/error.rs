@@ -22,7 +22,7 @@ impl Error {
     pub fn generic<S: Into<String>, S2: Into<String>>(s: S, internal: S2) -> Error {
         let string: String = s.into();
         assert!(
-            !string.contains("\r") && !string.contains("\n"),
+            !string.contains('\r') && !string.contains('\n'),
             "Generic error strings must not contain newlines"
         );
         Error::BadMessage(BadMessageError::Generic(string, internal.into()))

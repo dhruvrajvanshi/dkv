@@ -12,6 +12,8 @@ use command::Command;
 use error::{BadMessageError, Error};
 use value::Value;
 
+use crate::command::make_command_docs;
+
 fn main() -> Result<()> {
     let mut server = Server::new(TcpListener::bind("0.0.0.0:6543")?);
     println!("Listening on port 6543");
@@ -97,6 +99,20 @@ impl<T: Write + Read> Connection<'_, T> {
             Command::Get(key) => {
                 let value = self.map.get(&key).map_or(Value::Null, |v| v.clone());
                 value.write(&mut self.stream)?;
+                ConnectionResult::Continue
+            }
+            Command::Command(args) => {
+                if args[0].clone().as_str() == Some("DOCS") {
+                    let subcommand = args.get(1);
+                    if subcommand.is_none() {
+                        let command_docs = make_command_docs();
+                        Value::Map(command_docs).write(&mut self.stream)?;
+                    } else {
+                        todo!("COMMAND DOCS is not implement for subcommands yet")
+                    }
+                } else {
+                    todo!("Unimplement COMMAND {:?}", args[0])
+                }
                 ConnectionResult::Continue
             }
         })

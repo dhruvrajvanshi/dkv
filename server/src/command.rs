@@ -9,6 +9,7 @@ use crate::{
 pub enum Command {
     Set(String, Value),
     Get(String),
+    Command(Vec<Value>),
 }
 impl Command {
     pub fn read<T: Read>(stream: &mut T) -> Result<Command> {
@@ -57,6 +58,10 @@ impl Command {
                                 ))
                             }
                         }
+                        "COMMAND" => {
+                            let args = values[1..].to_vec();
+                            Ok(Command::Command(args))
+                        }
                         c => Err(Error::generic("Invalid command", c)),
                     },
                     _ => Err(Error::generic("Command must be a string", "")),
@@ -82,7 +87,24 @@ impl Command {
                 let array = Value::Array(vec![Value::from("GET"), Value::String(key.clone())]);
                 codec::write(&array, stream)?;
             }
+            Command::Command(args) => {
+                let mut cmd = vec![Value::from("COMMAND")];
+                cmd.extend(args.clone());
+                let array = Value::Array(cmd);
+                codec::write(&array, stream)?;
+            }
         }
         Ok(())
     }
+}
+
+pub fn make_command_docs() -> std::collections::HashMap<String, Value> {
+    let mut map = std::collections::HashMap::new();
+    let mut set_map = std::collections::HashMap::new();
+    set_map.insert("summary".to_owned(), Value::from("Set a key to a value"));
+    map.insert("SET".to_string(), Value::Map(set_map));
+    let mut get_map = std::collections::HashMap::new();
+    get_map.insert("summary".to_owned(), Value::from("Get a value by key"));
+    map.insert("GET".to_string(), Value::Map(get_map));
+    map
 }

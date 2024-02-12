@@ -1,57 +1,140 @@
-use std::{ptr, time::SystemTime};
+use std::{cell::RefCell, collections::HashMap, ptr, sync::Mutex};
 
 use libc::{exit, kevent, perror};
 
 fn main() {
-    let mut kq = KQueue::new();
-    kq.register(
-        1,
-        libc::EVFILT_TIMER,
-        libc::EV_ADD | libc::EV_ONESHOT,
-        0,
-        1000,
-        std::ptr::null_mut(),
+    let event_loop = EventLoop::new();
+    timeout(
+        &event_loop,
+        500,
+        Box::new(|el| {
+            println!("Once at 0.5 seconds");
+            timeout(
+                el,
+                500,
+                Box::new(|el| {
+                    println!("Once at 1 second");
+                    println!("Starting a new interval");
+                    interval(
+                        &el,
+                        500,
+                        Box::new(|_| {
+                            println!("Every 0.5 seconds");
+                        }),
+                    );
+                }),
+            );
+        }),
     );
-    kq.register(
-        2,
-        libc::EVFILT_TIMER,
-        libc::EV_ADD | libc::EV_ONESHOT,
-        0,
-        2000,
-        ptr::null_mut(),
+    interval(
+        &event_loop,
+        1000,
+        Box::new(|_| {
+            println!("Every 1 second");
+        }),
     );
 
-    let start = SystemTime::now();
-    let mut max_ticks = 10;
-    while max_ticks > 0 {
-        let event = kq.select_1();
-        print!(
-            "{}: ",
-            SystemTime::now().duration_since(start).unwrap().as_secs()
-        );
-        let data: isize = match event.ident {
-            1 => {
-                println!("Timer 1 expired");
-                1000
-            }
-            2 => {
-                println!("Timer 2 expired");
-                2000
-            }
-            _ => {
-                panic!("Unexpected event");
-            }
-        };
-        kq.register(
-            event.ident,
-            event.filter,
-            event.flags,
-            event.fflags,
-            data,
-            event.udata,
-        );
-        max_ticks -= 1;
+    event_loop.run();
+}
+
+type Callback = Box<dyn Fn(&EventLoop) -> ()>;
+
+struct EventLoop {
+    kq: KQueue,
+    next_id: RefCell<usize>,
+    callbacks: Mutex<HashMap<usize, Callback>>,
+    /**
+     * We want to allow callbacks to register new callbacks,
+     * but while callbacks are running, self.callbacks is locked.
+     * So in case when during a register call, self.callbacks is locked,
+     * we put the new registration here.
+     * Every loop iteration, before processing events, we drain this list
+     * into self.callbacks.
+     */
+    pending_registrations: Mutex<Vec<(usize, Callback)>>,
+}
+impl EventLoop {
+    pub fn new() -> EventLoop {
+        EventLoop {
+            kq: KQueue::new(),
+            next_id: RefCell::new(1),
+            callbacks: Mutex::new(HashMap::new()),
+            pending_registrations: Mutex::new(Vec::new()),
+        }
     }
+    pub fn register(
+        &self,
+        filter: i16,
+        flags: u16,
+        fflags: u32,
+        data: isize,
+        udata: *mut libc::c_void,
+        cb: Callback,
+    ) -> usize {
+        let ident = { *self.next_id.borrow() };
+        {
+            *self.next_id.borrow_mut() += 1;
+        }
+        self.kq.register(ident, filter, flags, fflags, data, udata);
+        {
+            match self.callbacks.try_lock() {
+                Ok(mut callbacks) => {
+                    callbacks.insert(ident, cb);
+                }
+                Err(_) => {
+                    self.pending_registrations.lock().unwrap().push((ident, cb));
+                }
+            }
+        }
+        ident
+    }
+
+    pub fn run(&self) {
+        loop {
+            let event = self.kq.select_1();
+            let ident = event.ident;
+            for (ident, cb) in self.pending_registrations.lock().unwrap().drain(..) {
+                match self.callbacks.try_lock() {
+                    Ok(mut callbacks) => {
+                        callbacks.insert(ident, cb);
+                    }
+                    Err(_) => {}
+                }
+            }
+            match self.callbacks.try_lock() {
+                Ok(callbacks) => {
+                    if let Some(cb) = callbacks.get(&ident) {
+                        cb(self);
+                    } // else, event cancelled
+                }
+                Err(_) => {
+                    continue;
+                }
+            }
+        }
+    }
+}
+
+fn timeout(event_loop: &EventLoop, time: isize, cb: Callback) -> usize {
+    event_loop.register(
+        libc::EVFILT_TIMER,
+        libc::EV_ADD | libc::EV_ONESHOT,
+        0,
+        time,
+        ptr::null_mut(),
+        cb,
+    )
+}
+
+fn interval(event_loop: &EventLoop, time: isize, cb: Callback) -> usize {
+    event_loop.register(
+        libc::EVFILT_TIMER,
+        libc::EV_ADD,
+        0,
+        time,
+        ptr::null_mut(),
+        cb,
+    )
 }
 
 struct KQueue {
@@ -71,7 +154,7 @@ impl KQueue {
     }
 
     pub fn register(
-        &mut self,
+        &self,
         ident: usize,
         filter: i16,
         flags: u16,
@@ -102,7 +185,7 @@ impl KQueue {
         }
     }
 
-    pub fn select_1(&mut self) -> libc::kevent {
+    pub fn select_1(&self) -> libc::kevent {
         let mut event = libc::kevent {
             ident: 1,
             filter: libc::EVFILT_TIMER,

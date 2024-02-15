@@ -1,14 +1,15 @@
 use std::{
-    collections::HashMap,
     io::{Read, Write},
     net::TcpListener,
 };
 mod codec;
 mod command;
+mod db;
 mod error;
 mod value;
 
 use command::Command;
+use db::DB;
 use error::{BadMessageError, Error};
 use value::Value;
 
@@ -23,14 +24,14 @@ fn main() -> Result<()> {
 
 pub struct Server {
     listener: TcpListener,
-    map: HashMap<String, Value>,
+    db: DB,
 }
 type Result<T> = codec::Result<T>;
 impl Server {
     pub fn new(listener: TcpListener) -> Server {
         Server {
             listener,
-            map: HashMap::new(),
+            db: DB::new(),
         }
     }
 
@@ -38,15 +39,15 @@ impl Server {
         for stream in self.listener.incoming() {
             let mut stream = stream?;
             dbg!("Accepted new connection");
-            Connection::new(&mut self.map, &mut stream).handle()?;
+            Connection::new(self.db.clone(), &mut stream).handle()?;
             dbg!("Handled connection");
         }
         Ok(())
     }
 }
 
-pub struct Connection<'a, T: Write + Read> {
-    map: &'a mut HashMap<String, Value>,
+pub struct Connection<T: Write + Read> {
+    db: DB,
     stream: T,
 }
 fn to_simple_string(e: Error) -> String {
@@ -67,9 +68,9 @@ fn to_simple_string(e: Error) -> String {
     }
 }
 
-impl<T: Write + Read> Connection<'_, T> {
-    pub fn new(map: &mut HashMap<String, Value>, stream: T) -> Connection<'_, T> {
-        Connection { map, stream }
+impl<T: Write + Read> Connection<T> {
+    pub fn new(db: DB, stream: T) -> Connection<T> {
+        Connection { db, stream }
     }
     pub fn handle(&mut self) -> std::io::Result<()> {
         loop {
@@ -94,11 +95,11 @@ impl<T: Write + Read> Connection<'_, T> {
         let command = Command::read(&mut self.stream)?;
         match command {
             Command::Set(key, value) => {
-                self.map.insert(key, value);
+                self.db.set(key, value);
                 Self::write_simple_string(&mut self.stream, "OK")?;
             }
             Command::Get(key) => {
-                let value = self.map.get(&key).map_or(Value::Null, |v| v.clone());
+                let value = self.db.get(&key);
                 value.write(&mut self.stream)?;
             }
             Command::Command(args) => {

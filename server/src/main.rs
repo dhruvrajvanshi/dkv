@@ -8,6 +8,7 @@ mod codec;
 mod command;
 mod db;
 mod error;
+mod streamext;
 mod value;
 
 use command::Command;
@@ -65,12 +66,12 @@ impl Server {
             }
         });
         for stream in self.listener.incoming() {
-            let mut stream = stream?;
+            let (reader, writer) = streamext::split(stream?);
             let db = self.db.clone();
             let s = handle_sender.clone();
             let handle = std::thread::spawn(move || {
                 dbg!("Accepted new connection");
-                Connection::new(db, &mut stream).handle().unwrap();
+                Connection::new(db, reader, writer).handle().unwrap();
                 dbg!("Handled connection");
                 s.send(HandleCommand::Stop(std::thread::current().id()))
                     .unwrap();
@@ -83,9 +84,10 @@ impl Server {
     }
 }
 
-pub struct Connection<T: Write + Read> {
+pub struct Connection<R: Read, W: Write> {
     db: DB,
-    stream: T,
+    reader: R,
+    writer: W,
 }
 fn to_simple_string(e: Error) -> String {
     match e {
@@ -105,9 +107,9 @@ fn to_simple_string(e: Error) -> String {
     }
 }
 
-impl<T: Write + Read> Connection<T> {
-    pub fn new(db: DB, stream: T) -> Connection<T> {
-        Connection { db, stream }
+impl<R: Read, W: Write> Connection<R, W> {
+    pub fn new(db: DB, reader: R, writer: W) -> Connection<R, W> {
+        Connection { db, reader, writer }
     }
     pub fn handle(&mut self) -> std::io::Result<()> {
         loop {
@@ -122,29 +124,29 @@ impl<T: Write + Read> Connection<T> {
                 }
                 Err(e) => {
                     eprintln!("Error: {:?}", e);
-                    write!(self.stream, "-ERROR: {}\r\n", to_simple_string(e))?;
+                    write!(self.writer, "-ERROR: {}\r\n", to_simple_string(e))?;
                 }
             }
         }
         Ok(())
     }
     fn _handle(&mut self) -> Result<()> {
-        let command = Command::read(&mut self.stream)?;
+        let command = Command::read(&mut self.reader)?;
         match command {
             Command::Set(key, value) => {
                 self.db.set(key, value);
-                Self::write_simple_string(&mut self.stream, "OK")?;
+                Self::write_simple_string(&mut self.writer, "OK")?;
             }
             Command::Get(key) => {
                 let value = self.db.get(&key);
-                value.write(&mut self.stream)?;
+                value.write(&mut self.writer)?;
             }
             Command::Command(args) => {
                 if args[0].clone().as_str() == Some("DOCS") {
                     let subcommand = args.get(1);
                     if subcommand.is_none() {
                         let command_docs = make_command_docs();
-                        Value::Map(command_docs).write(&mut self.stream)?;
+                        Value::Map(command_docs).write(&mut self.writer)?;
                     } else {
                         todo!("COMMAND DOCS is not implement for subcommands yet")
                     }
@@ -161,21 +163,21 @@ impl<T: Write + Read> Connection<T> {
                             println!("invalid config key: {:?}", key);
                         }
                         let value = config.get(key).unwrap_or(&default_reply);
-                        value.write(&mut self.stream)?;
+                        value.write(&mut self.writer)?;
                     } else {
                         todo!("Unimplement CONFIG GET {:?}", args[1])
                     }
-                    Value::Map(HashMap::new()).write(&mut self.stream)?
+                    Value::Map(HashMap::new()).write(&mut self.writer)?
                 } else {
                     todo!("Unimplement CONFIG {:?}", args[0])
                 }
             }
-            Command::Ping(s) => Value::from(s).write(&mut self.stream)?,
+            Command::Ping(s) => Value::from(s).write(&mut self.writer)?,
         }
         Ok(())
     }
 
-    fn write_simple_string(stream: &mut T, s: &str) -> Result<()> {
+    fn write_simple_string(stream: &mut W, s: &str) -> Result<()> {
         write!(stream, "+{}\r\n", s)?;
         Ok(())
     }

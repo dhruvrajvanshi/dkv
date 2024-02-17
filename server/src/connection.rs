@@ -123,7 +123,9 @@ fn to_simple_string(e: Error) -> String {
 
 #[cfg(test)]
 mod test {
-    use crate::codec;
+    use std::{io::Cursor, vec};
+
+    use crate::codec::{self, Result};
 
     use super::*;
     #[test]
@@ -148,5 +150,19 @@ mod test {
         let value = codec::read(&mut &output[..]).unwrap();
 
         assert_eq!(value, Value::from("PING"));
+    }
+
+    #[test]
+    fn can_get_after_set() -> Result<()> {
+        let mut input = vec![];
+        let mut output = vec![];
+        Command::Set("foo".into(), Value::from("bar")).write(&mut input)?;
+        Command::Get("foo".into()).write(&mut input)?;
+        let mut conn = Connection::new(DB::new(), &input[..], &mut output);
+        conn.handle()?;
+        let mut output_stream = Cursor::new(output);
+        assert_eq!(Value::read(&mut output_stream)?, Value::from("OK"));
+        assert_eq!(Value::read(&mut output_stream)?, Value::from("bar"));
+        Ok(())
     }
 }

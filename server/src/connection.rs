@@ -7,7 +7,7 @@ use crate::{
     command::Command,
     db::DB,
     error::{BadMessageError, Error},
-    serializable::Serializable,
+    serializable::{Deserializable, Serializable},
     value::Value,
     Result,
 };

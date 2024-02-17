@@ -1,9 +1,6 @@
 use std::io::Read;
 
-use crate::{
-    codec::{self, Result},
-    Error, Value,
-};
+use crate::{codec::Result, serializable::Deserializable, Error, Value};
 
 #[derive(Debug, PartialEq)]
 pub enum Command {
@@ -13,9 +10,11 @@ pub enum Command {
     Config(Vec<Value>),
     Ping(String),
 }
-impl Command {
-    pub fn read<T: Read>(stream: &mut T) -> Result<Command> {
-        let command = codec::read(stream)?;
+
+impl Deserializable for Command {
+    type Error = Error;
+    fn read(stream: &mut impl Read) -> Result<Self> {
+        let command = Value::read(stream)?;
         match command {
             Value::Array(values) => {
                 if values.is_empty() {

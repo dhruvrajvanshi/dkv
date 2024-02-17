@@ -12,6 +12,7 @@ use crate::{
 pub enum Value {
     String(String),
     Array(Vec<Value>),
+    Integer(i64),
     Map(HashMap<String, Value>),
     Null,
 }

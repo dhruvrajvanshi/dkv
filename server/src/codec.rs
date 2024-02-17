@@ -57,6 +57,10 @@ pub fn read<T: Read>(stream: &mut T) -> Result<Value> {
             }
             Ok(Value::Map(map))
         }
+        b':' => {
+            let len = parse_length(stream)?;
+            Ok(Value::Integer(len as i64))
+        }
         c => {
             let mut buf = vec![c];
             stream.read_to_end(&mut buf).unwrap();
@@ -94,6 +98,9 @@ pub fn write<T: Write>(value: &Value, stream: &mut T) -> io::Result<()> {
                 write_bulk_string(stream, key.as_str())?;
                 write(value, stream)?;
             }
+        }
+        Value::Integer(i) => {
+            write!(stream, ":{}\r\n", i)?;
         }
     }
     Ok(())

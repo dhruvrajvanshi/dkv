@@ -119,3 +119,33 @@ fn to_simple_string(e: Error) -> String {
         }
     }
 }
+
+#[cfg(test)]
+mod test {
+    use crate::codec;
+
+    use super::*;
+    #[test]
+    fn handles_ping() {
+        let input = b"*1\r\n$4\r\nPING\r\n";
+        let mut output = vec![];
+        let mut conn = Connection::new(DB::new(), &input[..], &mut output);
+        conn.handle().unwrap();
+
+        let value = codec::read(&mut &output[..]).unwrap();
+
+        assert_eq!(value, Value::from("PONG"));
+    }
+
+    #[test]
+    fn handles_ping_with_argument() {
+        let input = b"*2\r\n$4\r\nPING\r\n$4\r\nPING\r\n";
+        let mut output = vec![];
+        let mut conn = Connection::new(DB::new(), &input[..], &mut output);
+        conn.handle().unwrap();
+
+        let value = codec::read(&mut &output[..]).unwrap();
+
+        assert_eq!(value, Value::from("PING"));
+    }
+}

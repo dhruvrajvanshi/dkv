@@ -1,6 +1,10 @@
 use std::io::Read;
 
-use crate::{codec::Result, serializable::Deserializable, Error, Value};
+use crate::{
+    codec::Result,
+    serializable::{Deserializable, Serializable},
+    Error, Value,
+};
 
 #[derive(Debug, PartialEq)]
 pub enum Command {
@@ -82,6 +86,29 @@ impl Deserializable for Command {
                 }
             }
             _ => Err(Error::generic("Command must be an array", "")),
+        }
+    }
+}
+impl Serializable for Command {
+    fn write(&self, writer: &mut impl std::io::Write) -> std::io::Result<()> {
+        use Command::{Config, Get, Ping, Set};
+        match self {
+            Set(key, value) => {
+                Value::Array(vec![Value::from("SET"), Value::from(key), value.clone()])
+                    .write(writer)
+            }
+            Get(key) => Value::Array(vec![Value::from("GET"), Value::from(key)]).write(writer),
+            Command::Command(args) => {
+                let mut values = vec![Value::from("COMMAND")];
+                values.extend(args.clone());
+                Value::Array(values).write(writer)
+            }
+            Config(args) => {
+                let mut values = vec![Value::from("CONFIG")];
+                values.extend(args.clone());
+                Value::Array(values).write(writer)
+            }
+            Ping(s) => Value::Array(vec![Value::from("PING"), Value::from(s)]).write(writer),
         }
     }
 }

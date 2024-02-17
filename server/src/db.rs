@@ -27,6 +27,9 @@ impl DB {
             .get(key)
             .map_or(Value::Null, |v| v.clone())
     }
+    pub fn flush_all(&self) {
+        self.db_impl.clone().lock().unwrap().map.clear();
+    }
 
     pub fn set(&mut self, key: String, value: Value) {
         self.db_impl.clone().lock().unwrap().map.insert(key, value);

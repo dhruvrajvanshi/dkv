@@ -85,6 +85,10 @@ impl<R: Read, W: Write> Connection<R, W> {
                 }
             }
             Command::Ping(s) => Value::from(s).write(&mut self.writer)?,
+            Command::FlushAll => {
+                self.db.flush_all();
+                Self::write_simple_string(&mut self.writer, "OK")?;
+            }
         }
         Ok(())
     }

@@ -13,6 +13,7 @@ pub enum Command {
     Command(Vec<Value>),
     Config(Vec<Value>),
     Ping(String),
+    FlushAll,
 }
 
 impl Deserializable for Command {
@@ -80,6 +81,7 @@ impl Deserializable for Command {
                                 (values.len() - 1).to_string(),
                             )),
                         },
+                        "FLUSHALL" => Ok(Command::FlushAll),
                         c => Err(Error::generic("Invalid command", c)),
                     },
                     _ => Err(Error::generic("Command must be a string", "")),
@@ -109,6 +111,7 @@ impl Serializable for Command {
                 Value::Array(values).write(writer)
             }
             Ping(s) => Value::Array(vec![Value::from("PING"), Value::from(s)]).write(writer),
+            Command::FlushAll => Value::Array(vec![Value::from("FLUSHALL")]).write(writer),
         }
     }
 }

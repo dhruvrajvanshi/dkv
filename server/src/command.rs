@@ -11,6 +11,7 @@ pub enum Command {
     Get(String),
     Command(Vec<Value>),
     Config(Vec<Value>),
+    Ping(String),
 }
 impl Command {
     pub fn read<T: Read>(stream: &mut T) -> Result<Command> {
@@ -68,6 +69,14 @@ impl Command {
 
                             Ok(Command::Config(args))
                         }
+                        "PING" => match &values[1..] {
+                            [Value::String(s)] => Ok(Command::Ping(s.clone())),
+                            [] => Ok(Command::Ping("PONG".to_string())),
+                            _ => Err(Error::generic(
+                                "PING command must have 0 or 1 arguments",
+                                (values.len() - 1).to_string(),
+                            )),
+                        },
                         c => Err(Error::generic("Invalid command", c)),
                     },
                     _ => Err(Error::generic("Command must be a string", "")),

@@ -10,8 +10,8 @@ pub enum Value {
     Null,
 }
 impl Value {
-    pub fn from(value: &str) -> Value {
-        Value::String(value.to_string())
+    pub fn from<S: Into<String>>(value: S) -> Value {
+        Value::String(value.into())
     }
 
     pub fn write<T: std::io::Write>(&self, stream: &mut T) -> std::io::Result<()> {

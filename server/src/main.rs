@@ -170,6 +170,7 @@ impl<T: Write + Read> Connection<T> {
                     todo!("Unimplement CONFIG {:?}", args[0])
                 }
             }
+            Command::Ping(s) => Value::from(s).write(&mut self.stream)?,
         }
         Ok(())
     }

@@ -142,8 +142,6 @@ fn read_bulk_string<T: Read>(stream: &mut T) -> Result<String> {
 #[cfg(test)]
 mod test {
 
-    use crate::Command;
-
     use super::*;
     #[test]
     fn can_read_and_write_map() {
@@ -179,17 +177,6 @@ mod test {
         let value = Value::String("hello".to_string());
         write(&value, &mut output)?;
         assert_eq!(output, b"$5\r\nhello\r\n");
-        Ok(())
-    }
-
-    #[test]
-    fn can_read_and_write_commands() -> Result<()> {
-        let mut output: Vec<u8> = vec![];
-        let command = Command::Set("key".to_owned(), Value::from("value"));
-        command.write(&mut output)?;
-
-        let read_command = Command::read(&mut &output[..])?;
-        assert_eq!(read_command, command);
         Ok(())
     }
 

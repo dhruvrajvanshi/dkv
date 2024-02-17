@@ -1,4 +1,4 @@
-use std::io::{Read, Write};
+use std::io::Read;
 
 use crate::{
     codec::{self, Result},
@@ -75,40 +75,6 @@ impl Command {
             }
             _ => Err(Error::generic("Command must be an array", "")),
         }
-    }
-
-    // This will be used in the client API so I'm not removing it
-    #[allow(dead_code)]
-    pub fn write<T: Write>(&self, stream: &mut T) -> Result<()> {
-        match self {
-            Command::Set(key, value) => {
-                codec::write(
-                    &Value::Array(vec![
-                        Value::from("SET"),
-                        Value::String(key.clone()),
-                        value.clone(),
-                    ]),
-                    stream,
-                )?;
-            }
-            Command::Get(key) => {
-                let array = Value::Array(vec![Value::from("GET"), Value::String(key.clone())]);
-                codec::write(&array, stream)?;
-            }
-            Command::Command(args) => {
-                let mut cmd = vec![Value::from("COMMAND")];
-                cmd.extend(args.clone());
-                let array = Value::Array(cmd);
-                codec::write(&array, stream)?;
-            }
-            Command::Config(args) => {
-                let mut cmd = vec![Value::from("CONFIG")];
-                cmd.extend(args.clone());
-                let array = Value::Array(cmd);
-                codec::write(&array, stream)?;
-            }
-        }
-        Ok(())
     }
 }
 

@@ -10,6 +10,7 @@ pub enum Command {
     Set(String, Value),
     Get(String),
     Command(Vec<Value>),
+    Config(Vec<Value>),
 }
 impl Command {
     pub fn read<T: Read>(stream: &mut T) -> Result<Command> {
@@ -62,6 +63,11 @@ impl Command {
                             let args = values[1..].to_vec();
                             Ok(Command::Command(args))
                         }
+                        "CONFIG" => {
+                            let args = values[1..].to_vec();
+
+                            Ok(Command::Config(args))
+                        }
                         c => Err(Error::generic("Invalid command", c)),
                     },
                     _ => Err(Error::generic("Command must be a string", "")),
@@ -91,6 +97,12 @@ impl Command {
             }
             Command::Command(args) => {
                 let mut cmd = vec![Value::from("COMMAND")];
+                cmd.extend(args.clone());
+                let array = Value::Array(cmd);
+                codec::write(&array, stream)?;
+            }
+            Command::Config(args) => {
+                let mut cmd = vec![Value::from("CONFIG")];
                 cmd.extend(args.clone());
                 let array = Value::Array(cmd);
                 codec::write(&array, stream)?;

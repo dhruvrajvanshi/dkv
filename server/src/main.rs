@@ -152,6 +152,24 @@ impl<T: Write + Read> Connection<T> {
                     todo!("Unimplement COMMAND {:?}", args[0])
                 }
             }
+            Command::Config(args) => {
+                if let Some("GET") = args[0].as_str() {
+                    if let Some(key) = args[1].as_str() {
+                        let config = get_default_config();
+                        let default_reply = Value::Map(HashMap::new());
+                        if !config.contains_key(key) {
+                            println!("invalid config key: {:?}", key);
+                        }
+                        let value = config.get(key).unwrap_or(&default_reply);
+                        value.write(&mut self.stream)?;
+                    } else {
+                        todo!("Unimplement CONFIG GET {:?}", args[1])
+                    }
+                    Value::Map(HashMap::new()).write(&mut self.stream)?
+                } else {
+                    todo!("Unimplement CONFIG {:?}", args[0])
+                }
+            }
         }
         Ok(())
     }
@@ -160,4 +178,12 @@ impl<T: Write + Read> Connection<T> {
         write!(stream, "+{}\r\n", s)?;
         Ok(())
     }
+}
+
+fn get_default_config() -> HashMap<&'static str, Value> {
+    let mut config = HashMap::new();
+    config.insert("save", Value::from("3600 1 300 100 60 10000"));
+    config.insert("appendonly", Value::from("no"));
+    config.insert("bind", Value::from("localhost"));
+    config
 }

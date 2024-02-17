@@ -57,7 +57,11 @@ pub fn read<T: Read>(stream: &mut T) -> Result<Value> {
             }
             Ok(Value::Map(map))
         }
-        c => Err(Error::UnexpectedStartOfValue(c as char)),
+        c => {
+            let mut buf = vec![c];
+            stream.read_to_end(&mut buf).unwrap();
+            panic!("Error: {}", String::from_utf8_lossy(&buf))
+        }
     }
 }
 

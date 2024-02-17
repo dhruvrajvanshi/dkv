@@ -18,10 +18,6 @@ impl Value {
         codec::write(self, stream)
     }
 
-    pub fn read<T: std::io::Read>(stream: &mut T) -> codec::Result<Value> {
-        codec::read(stream)
-    }
-
     pub fn as_str(&self) -> Option<&str> {
         match self {
             Value::String(s) => Some(s),

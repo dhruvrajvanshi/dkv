@@ -123,9 +123,16 @@ fn to_simple_string(e: Error) -> String {
 
 #[cfg(test)]
 mod test {
-    use std::{io::Cursor, vec};
+    use std::{
+        net::{TcpListener, TcpStream},
+        thread::spawn,
+        vec,
+    };
 
-    use crate::codec::{self, Result};
+    use crate::{
+        codec::{self, Result},
+        Server,
+    };
 
     use super::*;
     #[test]
@@ -154,15 +161,39 @@ mod test {
 
     #[test]
     fn can_get_after_set() -> Result<()> {
-        let mut input = vec![];
-        let mut output = vec![];
-        Command::Set("foo".into(), Value::from("bar")).write(&mut input)?;
-        Command::Get("foo".into()).write(&mut input)?;
-        let mut conn = Connection::new(DB::new(), &input[..], &mut output);
-        conn.handle()?;
-        let mut output_stream = Cursor::new(output);
-        assert_eq!(Value::read(&mut output_stream)?, Value::from("OK"));
-        assert_eq!(Value::read(&mut output_stream)?, Value::from("bar"));
+        let port = find_open_port();
+        let server_port = port;
+        spawn(move || {
+            let mut server =
+                Server::new(TcpListener::bind(format!("localhost:{}", server_port)).unwrap());
+            server.start().unwrap();
+        });
+
+        let client_handle = spawn(move || {
+            let mut stream = TcpStream::connect(format!("localhost:{}", port)).unwrap();
+
+            Command::Set("foo".into(), Value::from("bar"))
+                .write(&mut stream)
+                .unwrap();
+
+            assert_eq!(Value::read(&mut stream).unwrap(), Value::from("OK"));
+
+            Command::Get("foo".into()).write(&mut stream).unwrap();
+            assert_eq!(Value::read(&mut stream).unwrap(), Value::from("bar"));
+        });
+        client_handle.join().unwrap();
+        // we don't have a way to signal termination to the server yet, so we'll just let
         Ok(())
+    }
+
+    fn find_open_port() -> usize {
+        let start = 7000;
+        let end = 8000;
+        for port in start..end {
+            if TcpListener::bind(format!("localhost:{}", port)).is_ok() {
+                return port;
+            }
+        }
+        panic!("No open ports found in range {}-{}", start, end);
     }
 }

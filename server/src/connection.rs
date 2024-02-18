@@ -136,7 +136,8 @@ fn to_simple_string(e: Error) -> String {
 mod test {
     use std::{
         net::{TcpListener, TcpStream},
-        thread::spawn,
+        thread::{sleep, spawn},
+        time::Duration,
         vec,
     };
 
@@ -181,6 +182,7 @@ mod test {
         });
 
         let client_handle = spawn(move || {
+            sleep(Duration::from_secs(1));
             let mut stream = TcpStream::connect(format!("localhost:{}", port)).unwrap();
 
             Command::Set("foo".into(), Value::from("bar"))

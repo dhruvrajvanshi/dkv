@@ -33,7 +33,7 @@ impl Deserializable for Command {
 
                 let command = &values[0];
                 match command {
-                    Value::String(s) => match s.as_str() {
+                    Value::String(s) => match s.as_str().to_uppercase().as_str() {
                         "SET" => {
                             if values.len() != 3 {
                                 return Err(Error::generic(

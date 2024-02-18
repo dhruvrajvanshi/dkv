@@ -89,6 +89,10 @@ impl<R: Read, W: Write> Connection<R, W> {
                 self.db.flush_all();
                 Self::write_simple_string(&mut self.writer, "OK")?;
             }
+            Command::Del(key) => {
+                let num_keys_deleted = self.db.del(&key);
+                Value::Integer(num_keys_deleted as i64).write(&mut self.writer)?
+            }
         }
         Ok(())
     }

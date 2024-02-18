@@ -34,6 +34,16 @@ impl DB {
     pub fn set(&mut self, key: String, value: Value) {
         self.db_impl.clone().lock().unwrap().map.insert(key, value);
     }
+
+    pub fn del(&mut self, key: &str) -> u64 {
+        self.db_impl
+            .clone()
+            .lock()
+            .unwrap()
+            .map
+            .remove(key)
+            .is_some() as u64
+    }
 }
 
 struct DBImpl {

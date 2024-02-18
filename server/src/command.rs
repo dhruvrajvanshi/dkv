@@ -10,6 +10,7 @@ use crate::{
 pub enum Command {
     Set(String, Value),
     Get(String),
+    Del(String),
     Command(Vec<Value>),
     Config(Vec<Value>),
     Ping(String),
@@ -64,6 +65,13 @@ impl Deserializable for Command {
                                 ))
                             }
                         }
+                        "DEL" => match &values[1..] {
+                            [Value::String(s)] => Ok(Command::Del(s.clone())),
+                            _ => Err(Error::generic(
+                                "DEL command must have 1 argument",
+                                (values.len() - 1).to_string(),
+                            )),
+                        },
                         "COMMAND" => {
                             let args = values[1..].to_vec();
                             Ok(Command::Command(args))
@@ -112,6 +120,9 @@ impl Serializable for Command {
             }
             Ping(s) => Value::Array(vec![Value::from("PING"), Value::from(s)]).write(writer),
             Command::FlushAll => Value::Array(vec![Value::from("FLUSHALL")]).write(writer),
+            Command::Del(key) => {
+                Value::Array(vec![Value::from("DEL"), Value::from(key)]).write(writer)
+            }
         }
     }
 }

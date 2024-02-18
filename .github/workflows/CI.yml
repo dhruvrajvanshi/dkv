@@ -22,3 +22,18 @@ jobs:
       run: cargo test --verbose
     - name: Run clippy
       run: cargo clippy --verbose
+
+    - name: Start dkv
+      run: cargo run --bin dkv
+
+    - uses: actions/checkout@v4
+      with:
+        name: tair-opensource/compatibility-test-suite-for-redis
+        path: copatibility-test-suite-for-redis
+    - name: Build compatibility-test-suite-for-redis
+      run: python3 -m pip install -r requirements.txt
+      working-directory: compatibility-test-suite-for-redis
+    - name: Run comptibility test
+      run: python3 redis_compatibility_test.py --port 6543 --testfile cts.json
+      working-directory: compatibility-test-suite-for-redis
+

@@ -23,13 +23,10 @@ jobs:
     - name: Run clippy
       run: cargo clippy --verbose
 
-    - name: Start dkv
-      run: cargo run --bin dkv
-
   compatibility-test:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
     - name: Run comptibility test
-      run: sh run_compatibility_test.sh
+      run: bash run_compatibility_test.sh
 

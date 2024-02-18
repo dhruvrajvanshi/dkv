@@ -1,20 +1,11 @@
-#!/bin/sh
+#!/bin/bash
 set -e
-
-if [ -d "venv" ]; then
-  echo "Virtual env already exists..."
-else
-  echo "Creating virtual env..."
-  python -m venv venv
-fi
-
-source venv/Scripts/activate
 
 if [ -d "compatibility-test-suite-for-redis" ]; then
   echo "Compatibility test suite already exists..."
 else
   echo "Cloning compatibility test suite..."
-  git clone git@github.com:tair-opensource/compatibility-test-suite-for-redis.git compatibility-test-suite-for-redis
+  git clone https://github.com/tair-opensource/compatibility-test-suite-for-redis.git
 fi
 
 echo "Installing dependencies"
@@ -23,7 +14,16 @@ pip install -r compatibility-test-suite-for-redis/requirements.txt
 cargo run --bin dkv &
 child_pid=$!
 
-python compatibility-test-suite-for-redis/redis_compatibility_test.py --port 6543 --testfile compatibility-test-suite-for-redis/tests/cts.json
 
-source venv/Scripts/deactivate
+echo -n 'Waiting for port 6543 to open...'
+until nc -z 0.0.0.0 6543; do
+  sleep 1
+done
+echo 'Port 6543 is now open!'
+
+
+python compatibility-test-suite-for-redis/redis_compatibility_test.py --port 6543 --testfile compatibility-test-suite-for-redis/cts.json > test_result.log
+
+cat test_result.log
+
 kill $child_pid

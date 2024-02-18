@@ -93,6 +93,9 @@ impl<R: Read, W: Write> Connection<R, W> {
                 let num_keys_deleted = self.db.del(&key);
                 Value::Integer(num_keys_deleted as i64).write(&mut self.writer)?
             }
+            Command::ClientSetInfo(_, _) => {
+                Self::write_simple_string(&mut self.writer, "OK")?;
+            }
         }
         Ok(())
     }

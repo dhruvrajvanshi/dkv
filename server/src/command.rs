@@ -15,6 +15,7 @@ pub enum Command {
     Config(Vec<Value>),
     Ping(String),
     FlushAll,
+    ClientSetInfo(String, String),
 }
 
 impl Deserializable for Command {
@@ -76,6 +77,23 @@ impl Deserializable for Command {
                             let args = values[1..].to_vec();
                             Ok(Command::Command(args))
                         }
+                        "CLIENT" => match &values[1..] {
+                            [Value::String(ref subcommand), Value::String(key), Value::String(value)] => {
+                                match subcommand.as_str() {
+                                    "SETINFO" => {
+                                        Ok(Command::ClientSetInfo(key.clone(), value.clone()))
+                                    }
+                                    _ => Err(Error::generic(
+                                        "Invalid client subcommand",
+                                        format!("{:?}", subcommand),
+                                    )),
+                                }
+                            }
+                            _ => Err(Error::generic(
+                                "Invalid client command",
+                                format!("{:?}", command),
+                            )),
+                        },
                         "CONFIG" => {
                             let args = values[1..].to_vec();
 
@@ -101,6 +119,7 @@ impl Deserializable for Command {
 }
 impl Serializable for Command {
     fn write(&self, writer: &mut impl std::io::Write) -> std::io::Result<()> {
+        use Command as c;
         use Command::{Config, Get, Ping, Set};
         match self {
             Set(key, value) => {
@@ -123,6 +142,13 @@ impl Serializable for Command {
             Command::Del(key) => {
                 Value::Array(vec![Value::from("DEL"), Value::from(key)]).write(writer)
             }
+            c::ClientSetInfo(key, value) => Value::Array(vec![
+                Value::from("CLIENT"),
+                Value::from("SETINFO"),
+                Value::from(key),
+                Value::from(value),
+            ])
+            .write(writer),
         }
     }
 }

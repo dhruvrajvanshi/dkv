@@ -23,7 +23,9 @@ echo 'Port 6543 is now open!'
 
 
 python compatibility-test-suite-for-redis/redis_compatibility_test.py --port 6543 --testfile compatibility-test-suite-for-redis/cts.json > test_result.log
-
 cat test_result.log
+cat test_result.log | python parse_test_log.py
+
+cat test_result.log | python parse_test_log.py >> $GITHUB_STEP_SUMMARY
 
 kill $child_pid

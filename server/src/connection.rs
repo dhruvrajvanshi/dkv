@@ -96,7 +96,23 @@ impl<R: Read, W: Write> Connection<R, W> {
             Command::ClientSetInfo(_, _) => {
                 Self::write_simple_string(&mut self.writer, "OK")?;
             }
+            Command::Rename(old_key, new_key) => {
+                let key_exists = self.db.exists(&old_key);
+                if !key_exists {
+                    self.write_error("NO_SUCH_KEY")?;
+                } else {
+                    let value = self.db.get(&old_key);
+                    self.db.set(new_key, value);
+                    self.db.del(&old_key);
+                    Self::write_simple_string(&mut self.writer, "OK")?;
+                }
+            }
         }
+        Ok(())
+    }
+
+    fn write_error(&mut self, s: &str) -> Result<()> {
+        write!(self.writer, "-ERROR: {}\r\n", s)?;
         Ok(())
     }
 

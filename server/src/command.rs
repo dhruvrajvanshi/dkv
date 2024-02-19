@@ -16,6 +16,7 @@ pub enum Command {
     Ping(String),
     FlushAll,
     ClientSetInfo(String, String),
+    Rename(String, String),
 }
 
 impl Deserializable for Command {
@@ -108,6 +109,15 @@ impl Deserializable for Command {
                             )),
                         },
                         "FLUSHALL" => Ok(Command::FlushAll),
+                        "RENAME" => match &values[1..] {
+                            [Value::String(old_key), Value::String(new_key)] => {
+                                Ok(Command::Rename(old_key.clone(), new_key.clone()))
+                            }
+                            _ => Err(Error::generic(
+                                "RENAME command must have 2 string arguments",
+                                (values.len() - 1).to_string(),
+                            )),
+                        },
                         c => Err(Error::generic("Invalid command", c)),
                     },
                     _ => Err(Error::generic("Command must be a string", "")),
@@ -147,6 +157,12 @@ impl Serializable for Command {
                 Value::from("SETINFO"),
                 Value::from(key),
                 Value::from(value),
+            ])
+            .write(writer),
+            c::Rename(old_key, new_key) => Value::Array(vec![
+                Value::from("RENAME"),
+                Value::from(old_key),
+                Value::from(new_key),
             ])
             .write(writer),
         }

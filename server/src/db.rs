@@ -27,6 +27,9 @@ impl DB {
             .get(key)
             .map_or(Value::Null, |v| v.clone())
     }
+    pub fn exists(&self, key: &str) -> bool {
+        self.db_impl.clone().lock().unwrap().map.contains_key(key)
+    }
     pub fn flush_all(&self) {
         self.db_impl.clone().lock().unwrap().map.clear();
     }

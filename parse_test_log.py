@@ -14,6 +14,13 @@ def main():
         passed += int(regex.match(line).group("passed"))
 
     print(f"Total tests: {total}, Passed: {passed}, Rate: {passed/total*100:.2f}%")
+    with open("pages/test_summary.json", "w") as f:
+        import json
+        json.dump({
+            "schemaVersion": 1,
+            "label": "Redis compatibility",
+            "message": f"{passed}/{total} tests passed",
+        }, f)
 
 if __name__ == '__main__':
     main()

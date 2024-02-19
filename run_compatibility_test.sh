@@ -28,4 +28,5 @@ cat test_result.log | python parse_test_log.py
 
 cat test_result.log | python parse_test_log.py >> $GITHUB_STEP_SUMMARY
 
-kill $child_pid
+
+trap "kill $child_pid" EXIT

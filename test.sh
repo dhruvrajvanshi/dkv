@@ -12,4 +12,4 @@ echo 'Port 6543 is now open!'
 
 (cd test && npm test)
 
-kill $process_id
+trap "kill $process_id" EXIT

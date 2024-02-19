@@ -23,6 +23,13 @@ jobs:
     - name: Run clippy
       run: cargo clippy --verbose
 
+    - name: Install npm dependencies
+      run: npm ci
+      working-directory: ./test
+
+    - name: Run tests
+      run: sh test.sh
+
   compatibility-test:
     runs-on: ubuntu-latest
     steps:

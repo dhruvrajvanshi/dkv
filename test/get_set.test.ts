@@ -1,16 +1,5 @@
-import { beforeAll, beforeEach, expect, test } from "vitest"
-import { createClient } from "redis"
-
-let redis: Awaited<ReturnType<typeof createClient>>
-beforeAll(async () => {
-  redis = createClient({
-    url: "redis://0.0.0.0:6543",
-  })
-  await redis.connect()
-})
-beforeEach(async () => {
-  await redis.flushAll()
-})
+import { expect, test } from "vitest"
+import { redis } from "./test_setup"
 
 test("get should return a value after set", async () => {
   await redis.set("foo", "bar")

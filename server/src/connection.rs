@@ -47,7 +47,7 @@ impl<R: Read, W: Write> Connection<R, W> {
         match command {
             Command::Set(key, value) => {
                 self.db.set(key, value);
-                Self::write_simple_string(&mut self.writer, "OK")?;
+                Self::_write_simple_string(&mut self.writer, "OK")?;
             }
             Command::Get(key) => {
                 let value = self.db.get(&key);
@@ -87,14 +87,14 @@ impl<R: Read, W: Write> Connection<R, W> {
             Command::Ping(s) => Value::from(s).write(&mut self.writer)?,
             Command::FlushAll => {
                 self.db.flush_all();
-                Self::write_simple_string(&mut self.writer, "OK")?;
+                Self::_write_simple_string(&mut self.writer, "OK")?;
             }
             Command::Del(key) => {
                 let num_keys_deleted = self.db.del(&key);
                 Value::Integer(num_keys_deleted as i64).write(&mut self.writer)?
             }
             Command::ClientSetInfo(_, _) => {
-                Self::write_simple_string(&mut self.writer, "OK")?;
+                Self::_write_simple_string(&mut self.writer, "OK")?;
             }
             Command::Rename(old_key, new_key) => {
                 let key_exists = self.db.exists(&old_key);
@@ -104,7 +104,33 @@ impl<R: Read, W: Write> Connection<R, W> {
                     let value = self.db.get(&old_key);
                     self.db.set(new_key, value);
                     self.db.del(&old_key);
-                    Self::write_simple_string(&mut self.writer, "OK")?;
+                    Self::_write_simple_string(&mut self.writer, "OK")?;
+                }
+            }
+            Command::HGet { key, field } => match self.db.get(&key) {
+                Value::Map(m) => {
+                    let value = m.get(&field).unwrap_or(&Value::Null);
+                    self.write_value(value)?
+                }
+                _ => {
+                    self.write_error("WRONG_TYPE")?;
+                }
+            },
+            Command::HSet { key, field, value } => {
+                let existing = self.db.get(&key);
+                match existing {
+                    Value::Map(mut map) => {
+                        map.insert(field.clone(), value.clone());
+                        self.db.set(key.clone(), Value::Map(map));
+                        self.write_simple_string("OK")?
+                    }
+                    Value::Null => {
+                        let mut map = HashMap::new();
+                        map.insert(field.clone(), value.clone());
+                        self.db.set(key.clone(), Value::Map(map));
+                        self.write_simple_string("OK")?
+                    }
+                    _ => self.write_error("WRONG_KEY")?,
                 }
             }
         }
@@ -116,7 +142,15 @@ impl<R: Read, W: Write> Connection<R, W> {
         Ok(())
     }
 
-    fn write_simple_string(stream: &mut W, s: &str) -> Result<()> {
+    fn write_value(&mut self, value: &Value) -> Result<()> {
+        value.write(&mut self.writer)?;
+        Ok(())
+    }
+    fn write_simple_string(&mut self, value: &str) -> Result<()> {
+        Self::_write_simple_string(&mut self.writer, value)
+    }
+
+    fn _write_simple_string(stream: &mut W, s: &str) -> Result<()> {
         write!(stream, "+{}\r\n", s)?;
         Ok(())
     }

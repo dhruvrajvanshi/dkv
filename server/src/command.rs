@@ -17,6 +17,15 @@ pub enum Command {
     FlushAll,
     ClientSetInfo(String, String),
     Rename(String, String),
+    HSet {
+        key: String,
+        field: String,
+        value: Value,
+    },
+    HGet {
+        key: String,
+        field: String,
+    },
 }
 
 impl Deserializable for Command {
@@ -118,6 +127,28 @@ impl Deserializable for Command {
                                 (values.len() - 1).to_string(),
                             )),
                         },
+                        "HSET" => match &values[1..] {
+                            [Value::String(key), field, value] => {
+                                let field = match field.clone() {
+                                    Value::String(field) => field,
+                                    Value::Integer(field) => field.to_string(),
+                                    _ => return Err(Error::generic("HSET field must be a string or number", ""))
+                                };
+                                Ok(Command::HSet { key: key.clone(), field, value: value.clone() })
+                            }
+                            _ => Err(Error::generic("HSET must be called with 2 string arguments and 1 string or number argument", ""))
+                        },
+                        "HGET" => match &values[1..] {
+                            [Value::String(key), field] => {
+                                let field = match field.clone() {
+                                    Value::String(field) => field,
+                                    Value::Integer(field) => field.to_string(),
+                                    _ => return Err(Error::generic("HSET field must be a string or number", ""))
+                                };
+                                Ok(Command::HGet { key: key.clone(), field })
+                            }
+                            _ => Err(Error::generic("HGET must be called with 2 string arguments", ""))
+                        }
                         c => Err(Error::generic("Invalid command", c)),
                     },
                     _ => Err(Error::generic("Command must be a string", "")),
@@ -163,6 +194,19 @@ impl Serializable for Command {
                 Value::from("RENAME"),
                 Value::from(old_key),
                 Value::from(new_key),
+            ])
+            .write(writer),
+            c::HSet { key, field, value } => Value::Array(vec![
+                Value::from("HSET"),
+                Value::from(key),
+                Value::from(field),
+                value.clone(),
+            ])
+            .write(writer),
+            c::HGet { key, field } => Value::Array(vec![
+                Value::from("HGET"),
+                Value::from(key),
+                Value::from(field),
             ])
             .write(writer),
         }

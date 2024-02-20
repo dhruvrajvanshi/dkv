@@ -65,7 +65,7 @@ def main():
             <main class="container">
                 <h1>Redis compatibility test results</h1>
                 <h2>Summary</h2>
-                <p>{passed}/{total} ({passed/total:.2f}%) tests passed</p>
+                <p>{passed}/{total} ({passed*100/total:.2f}%) tests passed</p>
                 <progress value="{passed}" max="{total}">{passed}/{total}</progress>
                 <table>
                     <tr>

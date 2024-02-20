@@ -26,6 +26,7 @@ pub enum Command {
         key: String,
         field: String,
     },
+    Hello(String),
 }
 
 impl Deserializable for Command {
@@ -149,6 +150,12 @@ impl Deserializable for Command {
                             }
                             _ => Err(Error::generic("HGET must be called with 2 string arguments", ""))
                         }
+                        "HELLO" => match &values[1..] {
+                            [Value::String(version)] => {
+                                Ok(Command::Hello(version.clone()))
+                            }
+                            _ => Err(Error::generic("HELLO must be called with 1 string argument", ""))
+                        }
                         c => Err(Error::generic("Invalid command", c)),
                     },
                     _ => Err(Error::generic("Command must be a string", "")),
@@ -209,6 +216,9 @@ impl Serializable for Command {
                 Value::from(field),
             ])
             .write(writer),
+            c::Hello(version) => {
+                Value::Array(vec![Value::from("HELLO"), Value::from(version)]).write(writer)
+            }
         }
     }
 }

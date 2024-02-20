@@ -45,6 +45,27 @@ impl<R: Read, W: Write> Connection<R, W> {
     fn _handle(&mut self) -> Result<()> {
         let command = Command::read(&mut self.reader)?;
         match command {
+            Command::Hello(version) => {
+                if version == "3" {
+                    let mut map = HashMap::new();
+                    {
+                        let mut put = |k, v| {
+                            map.insert(String::from(k), v);
+                        };
+                        put("server", Value::from("dkv"));
+                        put("version", Value::from("0.1.0"));
+                        put("proto", Value::Integer(3));
+                        put("id", Value::Integer(10));
+                        put("mode", Value::from("standalone"));
+                        put("role", Value::from("master"));
+                        put("modules", Value::Array(vec![]));
+                    }
+
+                    self.write_value(&Value::Map(map))?;
+                } else {
+                    self.write_error("Invalid protocol version")?;
+                }
+            }
             Command::Set(key, value) => {
                 self.db.set(key, value);
                 Self::_write_simple_string(&mut self.writer, "OK")?;

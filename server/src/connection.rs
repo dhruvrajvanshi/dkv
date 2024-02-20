@@ -104,7 +104,7 @@ impl<R: Read, W: Write> Connection<R, W> {
                     let value = self.db.get(&old_key);
                     self.db.set(new_key, value);
                     self.db.del(&old_key);
-                    Self::_write_simple_string(&mut self.writer, "OK")?;
+                    self.write_simple_string("OK")?;
                 }
             }
             Command::HGet { key, field } => match self.db.get(&key) {
@@ -122,13 +122,13 @@ impl<R: Read, W: Write> Connection<R, W> {
                     Value::Map(mut map) => {
                         map.insert(field.clone(), value.clone());
                         self.db.set(key.clone(), Value::Map(map));
-                        self.write_simple_string("OK")?
+                        self.write_value(&Value::Integer(1))?
                     }
                     Value::Null => {
                         let mut map = HashMap::new();
                         map.insert(field.clone(), value.clone());
                         self.db.set(key.clone(), Value::Map(map));
-                        self.write_simple_string("OK")?
+                        self.write_value(&Value::Integer(1))?
                     }
                     _ => self.write_error("WRONG_KEY")?,
                 }

@@ -21,7 +21,7 @@ until nc -z 0.0.0.0 6543; do
 done
 echo 'Port 6543 is now open!'
 
-cat compatibility-test-suite-for-redis/cts.json | sed 's/"skipped": true/"skipped": false/g' > compatibility-test-suite-for-redis/cts_noskip.json
+cat compatibility-test-suite-for-redis/cts.json | python scripts/filter_tests.py > compatibility-test-suite-for-redis/cts_noskip.json
 python compatibility-test-suite-for-redis/redis_compatibility_test.py --port 6543 --testfile compatibility-test-suite-for-redis/cts_noskip.json > test_result.log
 
 cat test_result.log

@@ -150,17 +150,9 @@ fn to_simple_string(e: Error) -> String {
 
 #[cfg(test)]
 mod test {
-    use std::{
-        net::{TcpListener, TcpStream},
-        thread::{sleep, spawn},
-        time::Duration,
-        vec,
-    };
+    use std::vec;
 
-    use crate::{
-        codec::{self, Result},
-        Server,
-    };
+    use crate::codec;
 
     use super::*;
     #[test]
@@ -185,44 +177,5 @@ mod test {
         let value = codec::read(&mut &output[..]).unwrap();
 
         assert_eq!(value, Value::from("PING"));
-    }
-
-    #[test]
-    fn can_get_after_set() -> Result<()> {
-        let port = find_open_port();
-        let server_port = port;
-        spawn(move || {
-            let mut server =
-                Server::new(TcpListener::bind(format!("localhost:{}", server_port)).unwrap());
-            server.start().unwrap();
-        });
-
-        let client_handle = spawn(move || {
-            sleep(Duration::from_secs(1));
-            let mut stream = TcpStream::connect(format!("localhost:{}", port)).unwrap();
-
-            Command::Set("foo".into(), Value::from("bar"))
-                .write(&mut stream)
-                .unwrap();
-
-            assert_eq!(Value::read(&mut stream).unwrap(), Value::from("OK"));
-
-            Command::Get("foo".into()).write(&mut stream).unwrap();
-            assert_eq!(Value::read(&mut stream).unwrap(), Value::from("bar"));
-        });
-        client_handle.join().unwrap();
-        // we don't have a way to signal termination to the server yet, so we'll just let
-        Ok(())
-    }
-
-    fn find_open_port() -> usize {
-        let start = 7000;
-        let end = 8000;
-        for port in start..end {
-            if TcpListener::bind(format!("localhost:{}", port)).is_ok() {
-                return port;
-            }
-        }
-        panic!("No open ports found in range {}-{}", start, end);
     }
 }

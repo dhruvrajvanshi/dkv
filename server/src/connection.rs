@@ -14,14 +14,26 @@ use crate::{
 
 use crate::command::make_command_docs;
 
+#[derive(Debug, Copy, Clone)]
+enum Protocol {
+    RESP2,
+    RESP3,
+}
+
 pub struct Connection<R: Read, W: Write> {
     db: DB,
     reader: R,
     writer: W,
+    protocol: Protocol,
 }
 impl<R: Read, W: Write> Connection<R, W> {
     pub fn new(db: DB, reader: R, writer: W) -> Connection<R, W> {
-        Connection { db, reader, writer }
+        Connection {
+            db,
+            reader,
+            writer,
+            protocol: Protocol::RESP2,
+        }
     }
     pub fn handle(&mut self) -> std::io::Result<()> {
         loop {
@@ -47,6 +59,7 @@ impl<R: Read, W: Write> Connection<R, W> {
         match command {
             Command::Hello(version) => {
                 if version == "3" {
+                    self.protocol = Protocol::RESP3;
                     let mut map = HashMap::new();
                     {
                         let mut put = |k, v| {
@@ -71,8 +84,11 @@ impl<R: Read, W: Write> Connection<R, W> {
                 Self::_write_simple_string(&mut self.writer, "OK")?;
             }
             Command::Get(key) => {
-                let value = self.db.get(&key);
-                value.write(&mut self.writer)?;
+                if let Some(value) = self.db.get_optional(&key) {
+                    value.write(&mut self.writer)?;
+                } else {
+                    self.write_null_response()?;
+                }
             }
             Command::Command(args) => {
                 if args[0].clone().as_str() == Some("DOCS") {
@@ -167,6 +183,19 @@ impl<R: Read, W: Write> Connection<R, W> {
         value.write(&mut self.writer)?;
         Ok(())
     }
+
+    /// RESP2 doesn't have a Null representation
+    /// instead, it uses a bulk string/array with -1 length
+    /// depending on context
+    fn write_null_response(&mut self) -> Result<()> {
+        Ok(match self.protocol {
+            Protocol::RESP2 => {
+                write!(self.writer, "$-1\r\n")?;
+            }
+            Protocol::RESP3 => self.write_value(&Value::Null)?,
+        })
+    }
+
     fn write_simple_string(&mut self, value: &str) -> Result<()> {
         Self::_write_simple_string(&mut self.writer, value)
     }

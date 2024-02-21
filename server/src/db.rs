@@ -27,6 +27,16 @@ impl DB {
             .get(key)
             .map_or(Value::Null, |v| v.clone())
     }
+
+    pub fn get_optional(&self, key: &str) -> Option<Value> {
+        self.db_impl
+            .clone()
+            .lock()
+            .unwrap()
+            .map
+            .get(key)
+            .map(|it| it.clone())
+    }
     pub fn exists(&self, key: &str) -> bool {
         self.db_impl.clone().lock().unwrap().map.contains_key(key)
     }

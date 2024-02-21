@@ -10,6 +10,6 @@ until nc -z 0.0.0.0 6543; do
 done
 echo 'Port 6543 is now open!'
 
-(cd test && npm test)
+pytest --junit-xml=test-results.xml
 
 trap "kill $process_id" EXIT

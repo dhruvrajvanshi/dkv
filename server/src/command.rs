@@ -1,10 +1,6 @@
 use std::io::Read;
 
-use crate::{
-    codec::Result,
-    serializable::{Deserializable, Serializable},
-    Error, Value,
-};
+use crate::{codec::Result, serializable::Deserializable, Error, Value};
 
 #[derive(Debug, PartialEq)]
 pub enum Command {
@@ -176,69 +172,6 @@ impl Deserializable for Command {
                 }
             }
             _ => Err(Error::generic("Command must be an array", "")),
-        }
-    }
-}
-impl Serializable for Command {
-    fn write(&self, writer: &mut impl std::io::Write) -> std::io::Result<()> {
-        use Command as c;
-        use Command::{Config, Get, Ping, Set};
-        match self {
-            Set(key, value) => {
-                Value::Array(vec![Value::from("SET"), Value::from(key), value.clone()])
-                    .write(writer)
-            }
-            Get(key) => Value::Array(vec![Value::from("GET"), Value::from(key)]).write(writer),
-            Command::Command(args) => {
-                let mut values = vec![Value::from("COMMAND")];
-                values.extend(args.clone());
-                Value::Array(values).write(writer)
-            }
-            Config(args) => {
-                let mut values = vec![Value::from("CONFIG")];
-                values.extend(args.clone());
-                Value::Array(values).write(writer)
-            }
-            Ping(s) => Value::Array(vec![Value::from("PING"), Value::from(s)]).write(writer),
-            Command::FlushAll => Value::Array(vec![Value::from("FLUSHALL")]).write(writer),
-            Command::Del(key) => {
-                Value::Array(vec![Value::from("DEL"), Value::from(key)]).write(writer)
-            }
-            c::ClientSetInfo(key, value) => Value::Array(vec![
-                Value::from("CLIENT"),
-                Value::from("SETINFO"),
-                Value::from(key),
-                Value::from(value),
-            ])
-            .write(writer),
-            c::Rename(old_key, new_key) => Value::Array(vec![
-                Value::from("RENAME"),
-                Value::from(old_key),
-                Value::from(new_key),
-            ])
-            .write(writer),
-            c::HSet { key, field, value } => Value::Array(vec![
-                Value::from("HSET"),
-                Value::from(key),
-                Value::from(field),
-                value.clone(),
-            ])
-            .write(writer),
-            c::HGet { key, field } => Value::Array(vec![
-                Value::from("HGET"),
-                Value::from(key),
-                Value::from(field),
-            ])
-            .write(writer),
-            c::HGetAll(key) => {
-                Value::Array(vec![Value::from("HGETALL"), Value::from(key)]).write(writer)
-            }
-            c::Hello(version) => {
-                Value::Array(vec![Value::from("HELLO"), Value::from(version)]).write(writer)
-            }
-            c::Exists(key) => {
-                Value::Array(vec![Value::from("EXISTS"), Value::from(key)]).write(writer)
-            }
         }
     }
 }

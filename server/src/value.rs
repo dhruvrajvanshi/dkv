@@ -16,14 +16,6 @@ pub enum Value {
     Map(HashMap<String, Value>),
     Null,
 }
-impl Value {
-    pub fn as_str(&self) -> Option<&str> {
-        match self {
-            Value::String(s) => Some(s),
-            _ => None,
-        }
-    }
-}
 impl From<String> for Value {
     fn from(s: String) -> Self {
         Value::String(s)

@@ -146,6 +146,20 @@ fn read_bulk_string<T: Read>(stream: &mut T) -> Result<String> {
     read_bulk_string_tail(stream)
 }
 
+pub fn read_bulk_string_array(stream: &mut impl Read) -> Result<Vec<String>> {
+    let mut buf = [0];
+    stream.read_exact(&mut buf)?;
+    if buf[0] != b'*' {
+        return Err(Error::generic("Expected a string", format!("{:?}", buf[0])));
+    }
+    let len = parse_length(stream)?;
+    let mut values = vec![];
+    for _ in 0..len {
+        values.push(read_bulk_string(stream)?);
+    }
+    Ok(values)
+}
+
 #[cfg(test)]
 mod test {
 

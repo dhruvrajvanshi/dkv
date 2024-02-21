@@ -92,7 +92,7 @@ impl<R: Read, W: Write> Connection<R, W> {
                 }
             }
             Command::Command(args) => {
-                if args[0].clone().as_str() == Some("DOCS") {
+                if args[0].clone().as_str() == "DOCS" {
                     let subcommand = args.get(1);
                     if subcommand.is_none() {
                         let command_docs = make_command_docs();
@@ -105,14 +105,14 @@ impl<R: Read, W: Write> Connection<R, W> {
                 }
             }
             Command::Config(args) => {
-                if let Some("GET") = args[0].as_str() {
-                    if let Some(key) = args[1].as_str() {
+                if args[0] == "GET" {
+                    if let Some(key) = args.get(1) {
                         let config = get_default_config();
                         let default_reply = Value::Map(HashMap::new());
-                        if !config.contains_key(key) {
+                        if !config.contains_key(key.as_str()) {
                             println!("invalid config key: {:?}", key);
                         }
-                        let value = config.get(key).unwrap_or(&default_reply);
+                        let value = config.get(key.as_str()).unwrap_or(&default_reply);
                         value.write(&mut self.writer)?;
                     } else {
                         todo!("Unimplement CONFIG GET {:?}", args[1])

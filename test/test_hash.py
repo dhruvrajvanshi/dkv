@@ -43,3 +43,17 @@ def test_hlen(protocol):
     redis.hset("myhash3", "field1", "Hello")
     redis.hset("myhash3", "field2", "World")
     assert redis.hlen("myhash3") == 2
+
+
+@with_supported_protocols
+def test_hexists_with_non_existent_key(protocol):
+    redis = make_redis(protocol)
+    assert redis.hexists("nonexistent", "field") == 0
+
+
+@with_supported_protocols
+def test_hexists_with_existing_key(protocol):
+    redis = make_redis(protocol)
+    redis.hset("myhash4", "field", "value")
+    assert redis.hexists("myhash4", "field")
+    assert not redis.hexists("myhash4", "field2")

@@ -29,6 +29,10 @@ pub enum Command {
     },
     HGetAll(String),
     HLen(String),
+    HExists {
+        key: String,
+        field: String,
+    },
     Hello(String),
 }
 
@@ -63,6 +67,10 @@ impl Deserializable for Command {
             },
             ("HGETALL", [key]) => c::HGetAll(key.clone()),
             ("HLEN", [key]) => c::HLen(key.clone()),
+            ("HEXISTS", [key, field]) => c::HExists {
+                key: key.clone(),
+                field: field.clone(),
+            },
             _ => return Err(Error::generic("Invalid command", format!("{:?}", command))),
         };
         Ok(c)

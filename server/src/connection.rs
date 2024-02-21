@@ -209,6 +209,18 @@ impl<R: Read, W: Write> Connection<R, W> {
                 });
                 self.write_value(&Value::Integer(len))?;
             }
+            Command::HExists { ref key, ref field } => {
+                let exists = self.db.view(key, |v| match v {
+                    Some(Value::Map(m)) => m.contains_key(field),
+                    _ => false,
+                });
+                let result = if exists {
+                    Value::Integer(1)
+                } else {
+                    Value::Integer(0)
+                };
+                self.write_value(&result)?;
+            }
         }
         Ok(())
     }

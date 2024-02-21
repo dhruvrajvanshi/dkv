@@ -38,11 +38,11 @@ impl DB {
         self.db_impl.clone().lock().unwrap().map.clear();
     }
 
-    pub fn set(&mut self, key: String, value: Value) {
+    pub fn set(&self, key: String, value: Value) {
         self.db_impl.clone().lock().unwrap().map.insert(key, value);
     }
 
-    pub fn del(&mut self, key: &str) -> u64 {
+    pub fn del(&self, key: &str) -> u64 {
         self.db_impl
             .clone()
             .lock()
@@ -51,8 +51,32 @@ impl DB {
             .remove(key)
             .is_some() as u64
     }
+
+    pub fn view<T>(&self, key: &str, f: impl FnOnce(Option<&Value>) -> T) -> T {
+        let m = self.db_impl.clone();
+        let m = m.lock().unwrap();
+        let m = &m.map;
+        let value = m.get(key);
+        f(value)
+    }
 }
 
 struct DBImpl {
     map: HashMap<String, Value>,
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn should_allow_reading_without_copying() {
+        let db = DB::new();
+        db.set("key".to_string(), Value::String("value".to_string()));
+        let len = db.view("key", |value: Option<&Value>| match value {
+            Some(Value::String(value)) => value.len(),
+            _ => panic!(),
+        });
+        assert_eq!(len, "value".len());
+    }
 }

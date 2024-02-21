@@ -48,7 +48,7 @@ impl<R: Read, W: Write> Connection<R, W> {
                     break;
                 }
                 Err(e) => {
-                    // eprintln!("Error: {:?}", e);
+                    eprintln!("Error: {:?}", e);
                     write!(self.writer, "-ERROR: {}\r\n", to_simple_string(e))?;
                 }
             }

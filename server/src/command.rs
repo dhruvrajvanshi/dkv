@@ -27,6 +27,7 @@ pub enum Command {
         key: String,
         field: String,
     },
+    HGetAll(String),
     Hello(String),
 }
 
@@ -151,6 +152,12 @@ impl Deserializable for Command {
                             }
                             _ => Err(Error::generic("HGET must be called with 2 string arguments", ""))
                         }
+                        "HGETALL" => match &values[1..] {
+                            [Value::String(key)] => {
+                                Ok(Command::HGetAll(key.clone()))
+                            }
+                            _ => Err(Error::generic("HGETALL must be called with 1 string argument", ""))
+                        }
                         "HELLO" => match &values[1..] {
                             [Value::String(version)] => {
                                 Ok(Command::Hello(version.clone()))
@@ -223,6 +230,9 @@ impl Serializable for Command {
                 Value::from(field),
             ])
             .write(writer),
+            c::HGetAll(key) => {
+                Value::Array(vec![Value::from("HGETALL"), Value::from(key)]).write(writer)
+            }
             c::Hello(version) => {
                 Value::Array(vec![Value::from("HELLO"), Value::from(version)]).write(writer)
             }

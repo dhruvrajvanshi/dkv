@@ -1,11 +1,12 @@
 use std::{
     collections::HashMap,
-    io::{Read, Write},
+    io::{self, Read, Write},
 };
 
 use crate::{
     command::Command,
     db::DB,
+    dkv_array,
     error::{BadMessageError, Error},
     serializable::{Deserializable, Serializable},
     value::Value,
@@ -181,6 +182,26 @@ impl<R: Read, W: Write> Connection<R, W> {
                     self.write_value(&Value::Integer(0))?;
                 }
             }
+            Command::HGetAll(key) => {
+                if let Some(Value::Map(m)) = self.db.get_optional(&key) {
+                    match self.protocol {
+                        Protocol::RESP2 => {
+                            let mut values = vec![];
+                            for (k, v) in m {
+                                values.push(Value::String(k));
+                                values.push(v);
+                            }
+                            self.write_value(&Value::Array(values))?;
+                        }
+                        Protocol::RESP3 => self.write_value(&Value::Map(m))?,
+                    }
+                } else {
+                    match self.protocol {
+                        Protocol::RESP2 => self.write_value(&dkv_array![])?,
+                        Protocol::RESP3 => self.write_value(&Value::Map(HashMap::new()))?,
+                    }
+                }
+            }
         }
         Ok(())
     }
@@ -190,7 +211,7 @@ impl<R: Read, W: Write> Connection<R, W> {
         Ok(())
     }
 
-    fn write_value(&mut self, value: &Value) -> Result<()> {
+    fn write_value(&mut self, value: &Value) -> io::Result<()> {
         value.write(&mut self.writer)?;
         Ok(())
     }
@@ -198,7 +219,7 @@ impl<R: Read, W: Write> Connection<R, W> {
     /// RESP2 doesn't have a Null representation
     /// instead, it uses a bulk string/array with -1 length
     /// depending on context
-    fn write_null_response(&mut self) -> Result<()> {
+    fn write_null_response(&mut self) -> io::Result<()> {
         match self.protocol {
             Protocol::RESP2 => {
                 write!(self.writer, "$-1\r\n")?;

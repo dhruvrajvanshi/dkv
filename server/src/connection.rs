@@ -191,12 +191,13 @@ impl<R: Read, W: Write> Connection<R, W> {
     /// instead, it uses a bulk string/array with -1 length
     /// depending on context
     fn write_null_response(&mut self) -> Result<()> {
-        Ok(match self.protocol {
+        match self.protocol {
             Protocol::RESP2 => {
                 write!(self.writer, "$-1\r\n")?;
             }
             Protocol::RESP3 => self.write_value(&Value::Null)?,
-        })
+        }
+        Ok(())
     }
 
     fn write_simple_string(&mut self, value: &str) -> Result<()> {

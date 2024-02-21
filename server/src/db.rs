@@ -29,13 +29,7 @@ impl DB {
     }
 
     pub fn get_optional(&self, key: &str) -> Option<Value> {
-        self.db_impl
-            .clone()
-            .lock()
-            .unwrap()
-            .map
-            .get(key)
-            .map(|it| it.clone())
+        self.db_impl.clone().lock().unwrap().map.get(key).cloned()
     }
     pub fn exists(&self, key: &str) -> bool {
         self.db_impl.clone().lock().unwrap().map.contains_key(key)

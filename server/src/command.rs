@@ -11,6 +11,7 @@ pub enum Command {
     Set(String, Value),
     Get(String),
     Del(String),
+    Exists(String),
     Command(Vec<Value>),
     Config(Vec<Value>),
     Ping(String),
@@ -156,6 +157,12 @@ impl Deserializable for Command {
                             }
                             _ => Err(Error::generic("HELLO must be called with 1 string argument", ""))
                         }
+                        "EXISTS" => match &values[1..] {
+                            [Value::String(key)] => {
+                                Ok(Command::Exists(key.clone()))
+                            }
+                            _ => Err(Error::generic("EXISTS must be called with 1 string argument", ""))
+                        }
                         c => Err(Error::generic("Invalid command", c)),
                     },
                     _ => Err(Error::generic("Command must be a string", "")),
@@ -218,6 +225,9 @@ impl Serializable for Command {
             .write(writer),
             c::Hello(version) => {
                 Value::Array(vec![Value::from("HELLO"), Value::from(version)]).write(writer)
+            }
+            c::Exists(key) => {
+                Value::Array(vec![Value::from("EXISTS"), Value::from(key)]).write(writer)
             }
         }
     }

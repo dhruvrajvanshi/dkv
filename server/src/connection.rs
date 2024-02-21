@@ -173,6 +173,14 @@ impl<R: Read, W: Write> Connection<R, W> {
                     _ => self.write_error("WRONG_KEY")?,
                 }
             }
+            Command::Exists(key) => {
+                let exists = self.db.exists(&key);
+                if exists {
+                    self.write_value(&Value::Integer(1))?;
+                } else {
+                    self.write_value(&Value::Integer(0))?;
+                }
+            }
         }
         Ok(())
     }

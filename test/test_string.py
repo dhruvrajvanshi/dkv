@@ -21,3 +21,11 @@ def test_rename(protocol):
     r.rename("foo", "bar")
     assert r.get("bar") == "bar"
     assert r.get("foo") is None
+
+
+@with_supported_protocols
+def test_exists(protocol):
+    r = make_redis(protocol)
+    r.set("foo", "bar")
+    assert r.exists("foo") == 1
+    assert r.exists("bar") == 0

@@ -1,4 +1,8 @@
-use std::net::TcpListener;
+use std::{
+    collections::HashMap,
+    net::TcpListener,
+    thread::{JoinHandle, ThreadId},
+};
 mod codec;
 mod command;
 mod connection;
@@ -6,12 +10,10 @@ mod db;
 mod error;
 mod serializable;
 mod streamext;
-mod thread_pool;
 mod value;
 
 use db::DB;
 use error::Error;
-use thread_pool::ThreadPool;
 use value::Value;
 
 use crate::connection::Connection;
@@ -26,30 +28,58 @@ fn main() -> Result<()> {
 pub struct Server {
     listener: TcpListener,
     db: DB,
-    thread_pool: ThreadPool,
 }
-
+enum HandleCommand {
+    Start(JoinHandle<()>),
+    Stop(ThreadId),
+    Drain,
+}
 type Result<T> = codec::Result<T>;
 impl Server {
     pub fn new(listener: TcpListener) -> Server {
         Server {
             listener,
             db: DB::new(),
-            thread_pool: ThreadPool::new(1),
         }
     }
 
     pub fn start(&mut self) -> Result<()> {
+        let (handle_sender, handle_receiver) = std::sync::mpsc::channel::<HandleCommand>();
+        let handle_manager = std::thread::spawn(move || {
+            let mut handles = HashMap::new();
+            loop {
+                match handle_receiver.recv().unwrap() {
+                    HandleCommand::Start(handle) => {
+                        let thread_id = handle.thread().id();
+                        handles.insert(thread_id, handle);
+                    }
+                    HandleCommand::Stop(thread_id) => {
+                        let handle = handles.remove(&thread_id).unwrap();
+                        handle.join().unwrap();
+                        handles.remove(&thread_id);
+                    }
+                    HandleCommand::Drain => break,
+                }
+            }
+            for (_, handle) in handles {
+                handle.join().unwrap();
+            }
+        });
         for stream in self.listener.incoming() {
-            let stream = stream?;
+            let (reader, writer) = streamext::split(stream?);
             let db = self.db.clone();
-            self.thread_pool.submit(move || {
+            let s = handle_sender.clone();
+            let handle = std::thread::spawn(move || {
                 dbg!("Accepted new connection");
-                let (reader, writer) = streamext::split(stream);
                 Connection::new(db, reader, writer).handle().unwrap();
                 dbg!("Handled connection");
+                s.send(HandleCommand::Stop(std::thread::current().id()))
+                    .unwrap();
             });
+            handle_sender.send(HandleCommand::Start(handle)).unwrap();
         }
+        handle_sender.send(HandleCommand::Drain).unwrap();
+        handle_manager.join().unwrap();
         Ok(())
     }
 }

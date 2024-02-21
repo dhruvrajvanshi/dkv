@@ -146,8 +146,11 @@ impl<R: Read, W: Write> Connection<R, W> {
             }
             Command::HGet { key, field } => match self.db.get(&key) {
                 Value::Map(m) => {
-                    let value = m.get(&field).unwrap_or(&Value::Null);
-                    self.write_value(value)?
+                    if let Some(value) = m.get(&field) {
+                        self.write_value(value)?;
+                    } else {
+                        self.write_null_response()?;
+                    }
                 }
                 _ => {
                     self.write_error("WRONG_TYPE")?;

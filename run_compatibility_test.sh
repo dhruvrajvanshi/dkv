@@ -21,9 +21,8 @@ until nc -z 0.0.0.0 6543; do
 done
 echo 'Port 6543 is now open!'
 
-cat compatibility-test-suite-for-redis/redis_compatibility_test.py | sed "s/decode_responses=True/decode_responses=True, protocol=3/" > compatibility-test-suite-for-redis/test.py
 cat compatibility-test-suite-for-redis/cts.json | python scripts/filter_tests.py > compatibility-test-suite-for-redis/cts_noskip.json
-python compatibility-test-suite-for-redis/test.py --port 6543 --testfile compatibility-test-suite-for-redis/cts_noskip.json > test_result.log
+python compatibility-test-suite-for-redis/redis_compatibility_test.py --port 6543 --testfile compatibility-test-suite-for-redis/cts_noskip.json > test_result.log
 
 cat test_result.log
 cat test_result.log | python parse_test_log.py

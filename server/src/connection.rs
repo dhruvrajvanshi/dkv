@@ -202,6 +202,13 @@ impl<R: Read, W: Write> Connection<R, W> {
                     }
                 }
             }
+            Command::HLen(ref key) => {
+                let len = self.db.view(key, |v| match v {
+                    Some(Value::Map(m)) => m.len() as i64,
+                    _ => 0,
+                });
+                self.write_value(&Value::Integer(len))?;
+            }
         }
         Ok(())
     }

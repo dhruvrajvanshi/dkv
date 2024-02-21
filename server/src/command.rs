@@ -28,6 +28,7 @@ pub enum Command {
         field: String,
     },
     HGetAll(String),
+    HLen(String),
     Hello(String),
 }
 
@@ -61,6 +62,7 @@ impl Deserializable for Command {
                 value: Value::from(value),
             },
             ("HGETALL", [key]) => c::HGetAll(key.clone()),
+            ("HLEN", [key]) => c::HLen(key.clone()),
             _ => return Err(Error::generic("Invalid command", format!("{:?}", command))),
         };
         Ok(c)

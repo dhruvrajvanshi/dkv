@@ -29,3 +29,17 @@ def test_hgetall(protocol):
 def test_hgetall_non_existent_hash(protocol):
     redis = make_redis(protocol)
     assert redis.hgetall("nonexistent") == {}
+
+
+@with_supported_protocols
+def test_hlen_with_non_existent_key(protocol):
+    redis = make_redis(protocol)
+    assert redis.hlen("nonexistent") == 0
+
+
+@with_supported_protocols
+def test_hlen(protocol):
+    redis = make_redis(protocol)
+    redis.hset("myhash3", "field1", "Hello")
+    redis.hset("myhash3", "field2", "World")
+    assert redis.hlen("myhash3") == 2

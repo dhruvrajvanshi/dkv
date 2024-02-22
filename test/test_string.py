@@ -1,4 +1,6 @@
 from test.util import make_redis, with_supported_protocols
+import pytest
+from redis.exceptions import ResponseError
 
 
 @with_supported_protocols
@@ -29,3 +31,19 @@ def test_exists(protocol):
     r.set("foo", "bar")
     assert r.exists("foo") == 1
     assert r.exists("bar") == 0
+
+
+@with_supported_protocols
+def test_get_with_non_string_value(protocol):
+    r = make_redis(protocol)
+    r.hset("foo", "key", "value")
+    with pytest.raises(ResponseError) as ex:
+        r.get("foo")
+    assert ex.match("WRONGTYPE")
+
+
+@with_supported_protocols
+def test_get_with_integer_value(protocol):
+    r = make_redis(protocol)
+    r.set("foo", 1)
+    assert r.get("foo") == "1"

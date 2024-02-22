@@ -84,13 +84,15 @@ impl<R: Read, W: Write> Connection<R, W> {
                 self.db.set(key, value);
                 self.write_simple_string("OK")?;
             }
-            Command::Get(key) => {
-                if let Some(value) = self.db.get_optional(&key) {
+            Command::Get(key) => match self.db.get_optional(&key) {
+                Some(value @ Value::String(_)) => {
                     value.write(&mut self.writer)?;
-                } else {
+                }
+                Some(_) => self.write_error("WRONGTYPE")?,
+                None => {
                     self.write_null_response()?;
                 }
-            }
+            },
             Command::Command(args) => {
                 if args[0].clone().as_str() == "DOCS" {
                     let subcommand = args.get(1);

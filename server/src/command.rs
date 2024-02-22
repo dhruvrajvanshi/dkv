@@ -8,7 +8,7 @@ use crate::{
 
 #[derive(Debug, PartialEq)]
 pub enum Command {
-    Set(String, Value),
+    Set(String, String),
     Get(String),
     Del(String),
     Exists(String),
@@ -51,7 +51,7 @@ impl Deserializable for Command {
             ("FLUSHALL", _) => c::FlushAll,
             ("PING", []) => c::Ping("PONG".into()),
             ("PING", [value]) => c::Ping(value.into()),
-            ("SET", [key, value]) => c::Set(key.clone(), Value::from(value)),
+            ("SET", [key, value]) => c::Set(key.clone(), value.clone()),
             ("GET", [key]) => c::Get(key.clone()),
             ("DEL", [key]) => c::Del(key.clone()),
             ("RENAME", [old, new]) => c::Rename(old.clone(), new.clone()),

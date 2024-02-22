@@ -81,7 +81,7 @@ impl<R: Read, W: Write> Connection<R, W> {
                 }
             }
             Command::Set(key, value) => {
-                self.db.set(key, value);
+                self.db.set(key, Value::from(value));
                 self.write_simple_string("OK")?;
             }
             Command::Get(key) => match self.db.get_optional(&key) {

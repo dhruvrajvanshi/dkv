@@ -18,15 +18,6 @@ impl DB {
             })),
         }
     }
-    pub fn get(&self, key: &str) -> Value {
-        self.db_impl
-            .clone()
-            .lock()
-            .unwrap()
-            .map
-            .get(key)
-            .map_or(Value::Null, |v| v.clone())
-    }
 
     pub fn get_optional(&self, key: &str) -> Option<Value> {
         self.db_impl.clone().lock().unwrap().map.get(key).cloned()

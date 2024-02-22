@@ -137,15 +137,16 @@ impl<R: Read, W: Write> Connection<R, W> {
                 self.write_simple_string("OK")?;
             }
             Command::Rename(old_key, new_key) => {
-                let key_exists = self.db.exists(&old_key);
-                if !key_exists {
-                    self.write_error("NO_SUCH_KEY")?;
-                } else {
-                    let value = self.db.get(&old_key);
-                    self.db.set(new_key, value);
-                    self.db.del(&old_key);
-                    self.write_simple_string("OK")?;
-                }
+                match self.db.get_optional(&old_key) {
+                    Some(value) => {
+                        self.db.set(new_key, value);
+                        self.db.del(&old_key);
+                        self.write_simple_string("OK")?;
+                    }
+                    None => {
+                        self.write_error("NO_SUCH_KEY")?;
+                    }
+                };
             }
             Command::HGet { key, field } => {
                 enum R {

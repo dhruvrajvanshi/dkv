@@ -82,7 +82,7 @@ impl<R: Read, W: Write> Connection<R, W> {
             }
             Command::Set(key, value) => {
                 self.db.set(key, value);
-                Self::_write_simple_string(&mut self.writer, "OK")?;
+                self.write_simple_string("OK")?;
             }
             Command::Get(key) => {
                 if let Some(value) = self.db.get_optional(&key) {
@@ -125,14 +125,14 @@ impl<R: Read, W: Write> Connection<R, W> {
             Command::Ping(s) => Value::from(s).write(&mut self.writer)?,
             Command::FlushAll => {
                 self.db.flush_all();
-                Self::_write_simple_string(&mut self.writer, "OK")?;
+                self.write_simple_string("OK")?;
             }
             Command::Del(key) => {
                 let num_keys_deleted = self.db.del(&key);
                 Value::Integer(num_keys_deleted as i64).write(&mut self.writer)?
             }
             Command::ClientSetInfo(_, _) => {
-                Self::_write_simple_string(&mut self.writer, "OK")?;
+                self.write_simple_string("OK")?;
             }
             Command::Rename(old_key, new_key) => {
                 let key_exists = self.db.exists(&old_key);
@@ -269,11 +269,7 @@ impl<R: Read, W: Write> Connection<R, W> {
     }
 
     fn write_simple_string(&mut self, value: &str) -> Result<()> {
-        Self::_write_simple_string(&mut self.writer, value)
-    }
-
-    fn _write_simple_string(stream: &mut W, s: &str) -> Result<()> {
-        write!(stream, "+{}\r\n", s)?;
+        write!(&mut self.writer, "+{}\r\n", value)?;
         Ok(())
     }
 }

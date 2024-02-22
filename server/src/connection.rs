@@ -145,18 +145,28 @@ impl<R: Read, W: Write> Connection<R, W> {
                     self.write_simple_string("OK")?;
                 }
             }
-            Command::HGet { key, field } => match self.db.get(&key) {
-                Value::Map(m) => {
-                    if let Some(value) = m.get(&field) {
-                        self.write_value(value)?;
-                    } else {
-                        self.write_null_response()?;
+            Command::HGet { key, field } => {
+                enum R {
+                    Found(Value),
+                    NotFound,
+                    WrongType,
+                }
+                let result = self.db.view(&key, |v| match v {
+                    Some(Value::Map(m)) => {
+                        if let Some(value) = m.get(&field) {
+                            R::Found(value.clone())
+                        } else {
+                            R::NotFound
+                        }
                     }
+                    _ => R::WrongType,
+                });
+                match result {
+                    R::Found(value) => self.write_value(&value)?,
+                    R::NotFound => self.write_null_response()?,
+                    R::WrongType => self.write_error("WRONG_TYPE")?,
                 }
-                _ => {
-                    self.write_error("WRONG_TYPE")?;
-                }
-            },
+            }
             Command::HSet { key, field, value } => {
                 enum R {
                     NewMap,

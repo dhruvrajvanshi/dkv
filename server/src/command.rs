@@ -21,7 +21,7 @@ pub enum Command {
     HSet {
         key: String,
         field: String,
-        value: Value,
+        value: String,
     },
     HGet {
         key: String,
@@ -63,7 +63,7 @@ impl Deserializable for Command {
             ("HSET", [key, field, value]) => c::HSet {
                 key: key.clone(),
                 field: field.clone(),
-                value: Value::from(value),
+                value: value.clone(),
             },
             ("HGETALL", [key]) => c::HGetAll(key.clone()),
             ("HLEN", [key]) => c::HLen(key.clone()),

@@ -179,7 +179,7 @@ impl<R: Read, W: Write> Connection<R, W> {
                 let result = self.db.mutate(&key, |v| match v {
                     None => R::NewMap,
                     Some(Value::Map(m)) => {
-                        m.insert(field.clone(), value.clone());
+                        m.insert(field.clone(), Value::from(value.clone()));
                         R::Mutated
                     }
 
@@ -190,7 +190,7 @@ impl<R: Read, W: Write> Connection<R, W> {
                     R::Mutated => self.write_value(&Value::Integer(1))?,
                     R::NewMap => {
                         let mut map = HashMap::new();
-                        map.insert(field, value);
+                        map.insert(field, Value::from(value));
                         self.db.set(key, Value::Map(map));
                         self.write_value(&Value::Integer(1))?
                     }

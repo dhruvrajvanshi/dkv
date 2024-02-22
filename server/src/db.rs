@@ -59,6 +59,14 @@ impl DB {
         let value = m.get(key);
         f(value)
     }
+
+    pub fn mutate<T>(&self, key: &str, f: impl FnOnce(Option<&mut Value>) -> T) -> T {
+        let m = self.db_impl.clone();
+        let mut m = m.lock().unwrap();
+        let m = &mut m.map;
+        let value = m.get_mut(key);
+        f(value)
+    }
 }
 
 struct DBImpl {

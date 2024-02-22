@@ -158,20 +158,30 @@ impl<R: Read, W: Write> Connection<R, W> {
                 }
             },
             Command::HSet { key, field, value } => {
-                let existing = self.db.get(&key);
-                match existing {
-                    Value::Map(mut map) => {
-                        map.insert(field.clone(), value.clone());
-                        self.db.set(key.clone(), Value::Map(map));
-                        self.write_value(&Value::Integer(1))?
+                enum R {
+                    NewMap,
+                    Mutated,
+                    WrongKey,
+                }
+                let result = self.db.mutate(&key, |v| match v {
+                    None => R::NewMap,
+                    Some(Value::Map(m)) => {
+                        m.insert(field.clone(), value.clone());
+                        R::Mutated
                     }
-                    Value::Null => {
+
+                    Some(_) => R::WrongKey,
+                });
+
+                match result {
+                    R::Mutated => self.write_value(&Value::Integer(1))?,
+                    R::NewMap => {
                         let mut map = HashMap::new();
-                        map.insert(field.clone(), value.clone());
-                        self.db.set(key.clone(), Value::Map(map));
+                        map.insert(field, value);
+                        self.db.set(key, Value::Map(map));
                         self.write_value(&Value::Integer(1))?
                     }
-                    _ => self.write_error("WRONG_KEY")?,
+                    R::WrongKey => self.write_error("WRONG_KEY")?,
                 }
             }
             Command::Exists(key) => {

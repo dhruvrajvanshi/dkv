@@ -123,7 +123,7 @@ fn parse_length<T: Read>(stream: &mut T) -> Result<usize> {
         .map_err(|_| Error::BadMessage(BadMessageError::InvalidLength(len)))
 }
 
-fn write_bulk_string<T: Write>(stream: &mut T, s: &str) -> io::Result<()> {
+pub fn write_bulk_string<T: Write>(stream: &mut T, s: &str) -> io::Result<()> {
     write!(stream, "${}\r\n", s.len())?;
     stream.write_all(s.as_bytes())?;
     stream.write_all(b"\r\n")?;
@@ -158,6 +158,14 @@ pub fn read_bulk_string_array(stream: &mut impl Read) -> Result<Vec<String>> {
         values.push(read_bulk_string(stream)?);
     }
     Ok(values)
+}
+
+pub fn write_bulk_string_array(stream: &mut impl Write, values: &[&str]) -> io::Result<()> {
+    write!(stream, "*{}\r\n", values.len())?;
+    for value in values {
+        write_bulk_string(stream, value)?;
+    }
+    Ok(())
 }
 
 #[cfg(test)]

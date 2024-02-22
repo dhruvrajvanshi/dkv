@@ -3,7 +3,34 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use crate::value::Value;
+use crate::{codec::write_bulk_string, serializable::Serializable};
+
+#[derive(Debug, Clone)]
+pub enum Value {
+    String(String),
+    List(Vec<String>),
+    Hash(HashMap<String, String>),
+}
+impl From<&str> for Value {
+    fn from(s: &str) -> Self {
+        Value::String(s.to_owned())
+    }
+}
+impl From<String> for Value {
+    fn from(s: String) -> Self {
+        Value::String(s)
+    }
+}
+impl From<Vec<String>> for Value {
+    fn from(s: Vec<String>) -> Self {
+        Value::List(s)
+    }
+}
+impl From<HashMap<String, String>> for Value {
+    fn from(s: HashMap<String, String>) -> Self {
+        Value::Hash(s)
+    }
+}
 
 #[derive(Clone)]
 pub struct DB {
@@ -77,5 +104,29 @@ mod test {
             _ => panic!(),
         });
         assert_eq!(len, "value".len());
+    }
+}
+
+impl Serializable for Value {
+    fn write(&self, stream: &mut impl std::io::Write) -> std::io::Result<()> {
+        match self {
+            Value::String(s) => {
+                write!(stream, "+{}\r\n", s)?;
+            }
+            Value::List(list) => {
+                write!(stream, "*{}\r\n", list.len())?;
+                for item in list {
+                    write_bulk_string(stream, item)?;
+                }
+            }
+            Value::Hash(map) => {
+                write!(stream, "%{}\r\n", map.len())?;
+                for (key, value) in map {
+                    write_bulk_string(stream, key.as_str())?;
+                    write_bulk_string(stream, value.as_str())?;
+                }
+            }
+        }
+        Ok(())
     }
 }

@@ -4,9 +4,9 @@ use std::{
 };
 
 use crate::{
+    codec,
     command::Command,
-    db::DB,
-    dkv_array,
+    db::{self, DB},
     error::{BadMessageError, Error},
     serializable::{Deserializable, Serializable},
     value::Value,
@@ -81,11 +81,11 @@ impl<R: Read, W: Write> Connection<R, W> {
                 }
             }
             Command::Set(key, value) => {
-                self.db.set(key, Value::from(value));
+                self.db.set(key, db::Value::from(value));
                 self.write_simple_string("OK")?;
             }
             Command::Get(key) => match self.db.get_optional(&key) {
-                Some(value @ Value::String(_)) => {
+                Some(value @ db::Value::String(_)) => {
                     value.write(&mut self.writer)?;
                 }
                 Some(_) => self.write_error("WRONGTYPE")?,
@@ -150,12 +150,12 @@ impl<R: Read, W: Write> Connection<R, W> {
             }
             Command::HGet { key, field } => {
                 enum R {
-                    Found(Value),
+                    Found(String),
                     NotFound,
                     WrongType,
                 }
                 let result = self.db.view(&key, |v| match v {
-                    Some(Value::Map(m)) => {
+                    Some(db::Value::Hash(m)) => {
                         if let Some(value) = m.get(&field) {
                             R::Found(value.clone())
                         } else {
@@ -165,7 +165,7 @@ impl<R: Read, W: Write> Connection<R, W> {
                     _ => R::WrongType,
                 });
                 match result {
-                    R::Found(value) => self.write_value(&value)?,
+                    R::Found(value) => self.write_bulk_string(&value)?,
                     R::NotFound => self.write_null_response()?,
                     R::WrongType => self.write_error("WRONG_TYPE")?,
                 }
@@ -178,8 +178,8 @@ impl<R: Read, W: Write> Connection<R, W> {
                 }
                 let result = self.db.mutate(&key, |v| match v {
                     None => R::NewMap,
-                    Some(Value::Map(m)) => {
-                        m.insert(field.clone(), Value::from(value.clone()));
+                    Some(db::Value::Hash(m)) => {
+                        m.insert(field.clone(), value.clone());
                         R::Mutated
                     }
 
@@ -190,8 +190,8 @@ impl<R: Read, W: Write> Connection<R, W> {
                     R::Mutated => self.write_value(&Value::Integer(1))?,
                     R::NewMap => {
                         let mut map = HashMap::new();
-                        map.insert(field, Value::from(value));
-                        self.db.set(key, Value::Map(map));
+                        map.insert(field, value);
+                        self.db.set(key, db::Value::Hash(map));
                         self.write_value(&Value::Integer(1))?
                     }
                     R::WrongKey => self.write_error("WRONG_KEY")?,
@@ -206,35 +206,36 @@ impl<R: Read, W: Write> Connection<R, W> {
                 }
             }
             Command::HGetAll(key) => {
-                if let Some(Value::Map(m)) = self.db.get_optional(&key) {
-                    match self.protocol {
-                        Protocol::RESP2 => {
-                            let mut values = vec![];
-                            for (k, v) in m {
-                                values.push(Value::String(k));
-                                values.push(v);
-                            }
-                            self.write_value(&Value::Array(values))?;
+                let map = match self.db.get_optional(&key) {
+                    Some(db::Value::Hash(m)) => m,
+                    _ => HashMap::new(),
+                };
+                match self.protocol {
+                    Protocol::RESP2 => {
+                        let mut values = vec![];
+                        for (k, v) in &map {
+                            values.push(k.as_str());
+                            values.push(v.as_str());
                         }
-                        Protocol::RESP3 => self.write_value(&Value::Map(m))?,
+                        println!("WRITE_ARRAY: {:?}", values);
+                        self.write_array(values.as_slice())?;
                     }
-                } else {
-                    match self.protocol {
-                        Protocol::RESP2 => self.write_value(&dkv_array![])?,
-                        Protocol::RESP3 => self.write_value(&Value::Map(HashMap::new()))?,
+                    Protocol::RESP3 => {
+                        println!("WRITE_HASH: {:?}", map);
+                        self.write(&db::Value::Hash(map))?;
                     }
                 }
             }
             Command::HLen(ref key) => {
                 let len = self.db.view(key, |v| match v {
-                    Some(Value::Map(m)) => m.len() as i64,
+                    Some(db::Value::Hash(m)) => m.len() as i64,
                     _ => 0,
                 });
                 self.write_value(&Value::Integer(len))?;
             }
             Command::HExists { ref key, ref field } => {
                 let exists = self.db.view(key, |v| match v {
-                    Some(Value::Map(m)) => m.contains_key(field),
+                    Some(db::Value::Hash(m)) => m.contains_key(field),
                     _ => false,
                 });
                 let result = if exists {
@@ -256,6 +257,18 @@ impl<R: Read, W: Write> Connection<R, W> {
     fn write_value(&mut self, value: &Value) -> io::Result<()> {
         value.write(&mut self.writer)?;
         Ok(())
+    }
+
+    fn write(&mut self, value: &impl Serializable) -> io::Result<()> {
+        value.write(&mut self.writer)
+    }
+
+    fn write_bulk_string(&mut self, value: &str) -> io::Result<()> {
+        codec::write_bulk_string(&mut self.writer, value)
+    }
+
+    fn write_array(&mut self, values: &[&str]) -> io::Result<()> {
+        codec::write_bulk_string_array(&mut self.writer, values)
     }
 
     /// RESP2 doesn't have a Null representation

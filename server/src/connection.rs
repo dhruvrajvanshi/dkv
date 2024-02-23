@@ -4,7 +4,7 @@ use std::{
 };
 
 use crate::{
-    codec,
+    codec::{self, write_bulk_string},
     command::Command,
     db::{self, DB},
     error::{BadMessageError, Error},
@@ -313,6 +313,30 @@ fn to_simple_string(e: Error) -> String {
         Error::UnexpectedStartOfValue(c) => {
             format!("Unexpected start of value: {}", c)
         }
+    }
+}
+impl Serializable for db::Value {
+    fn write(&self, stream: &mut impl std::io::Write) -> std::io::Result<()> {
+        use db::Value;
+        match self {
+            Value::String(s) => {
+                write!(stream, "+{}\r\n", s)?;
+            }
+            Value::List(list) => {
+                write!(stream, "*{}\r\n", list.len())?;
+                for item in list {
+                    write_bulk_string(stream, item)?;
+                }
+            }
+            Value::Hash(map) => {
+                write!(stream, "%{}\r\n", map.len())?;
+                for (key, value) in map {
+                    write_bulk_string(stream, key.as_str())?;
+                    write_bulk_string(stream, value.as_str())?;
+                }
+            }
+        }
+        Ok(())
     }
 }
 

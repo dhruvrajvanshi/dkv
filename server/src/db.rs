@@ -3,8 +3,6 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use crate::{codec::write_bulk_string, serializable::Serializable};
-
 #[derive(Debug, Clone)]
 pub enum Value {
     String(String),
@@ -104,29 +102,5 @@ mod test {
             _ => panic!(),
         });
         assert_eq!(len, "value".len());
-    }
-}
-
-impl Serializable for Value {
-    fn write(&self, stream: &mut impl std::io::Write) -> std::io::Result<()> {
-        match self {
-            Value::String(s) => {
-                write!(stream, "+{}\r\n", s)?;
-            }
-            Value::List(list) => {
-                write!(stream, "*{}\r\n", list.len())?;
-                for item in list {
-                    write_bulk_string(stream, item)?;
-                }
-            }
-            Value::Hash(map) => {
-                write!(stream, "%{}\r\n", map.len())?;
-                for (key, value) in map {
-                    write_bulk_string(stream, key.as_str())?;
-                    write_bulk_string(stream, value.as_str())?;
-                }
-            }
-        }
-        Ok(())
     }
 }

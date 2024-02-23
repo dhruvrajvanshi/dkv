@@ -46,53 +46,42 @@ impl DB {
     }
 
     pub fn get_optional(&self, key: &str) -> Option<Value> {
-        self.db_impl.clone().lock().unwrap().map.get(key).cloned()
+        self.with_lock(|m| m.map.get(key).cloned())
     }
     pub fn exists(&self, key: &str) -> bool {
-        self.db_impl.clone().lock().unwrap().map.contains_key(key)
+        self.with_lock(|m| m.map.contains_key(key))
     }
     pub fn flush_all(&self) {
-        self.db_impl.clone().lock().unwrap().map.clear();
+        self.with_lock(|m| m.map.clear())
     }
 
     pub fn set(&self, key: String, value: Value) {
-        self.db_impl.clone().lock().unwrap().map.insert(key, value);
+        self.with_lock(|m| m.map.insert(key, value));
     }
 
     pub fn del(&self, key: &str) -> u64 {
-        self.db_impl
-            .clone()
-            .lock()
-            .unwrap()
-            .map
-            .remove(key)
-            .is_some() as u64
+        self.with_lock(|m| m.map.remove(key).is_some() as u64)
     }
 
     pub fn view<T>(&self, key: &str, f: impl FnOnce(Option<&Value>) -> T) -> T {
-        let m = self.db_impl.clone();
-        let m = m.lock().unwrap();
-        let m = &m.map;
-        let value = m.get(key);
-        f(value)
+        self.with_lock(|m| f(m.map.get(key)))
     }
 
     pub fn mutate<T>(&self, key: &str, f: impl FnOnce(Option<&mut Value>) -> T) -> T {
-        let m = self.db_impl.clone();
-        let mut m = m.lock().unwrap();
-        let m = &mut m.map;
-        let value = m.get_mut(key);
-        f(value)
+        self.with_lock(|m| {
+            let value = m.map.get_mut(key);
+            f(value)
+        })
     }
 
-    fn with_impl<T>(&self, f: impl FnOnce(&mut DBImpl) -> T) -> T {
+    fn with_lock<T>(&self, f: impl FnOnce(&mut DBImpl) -> T) -> T {
         let mut db_impl = self.db_impl.lock().unwrap();
         f(&mut db_impl)
     }
 
     pub fn publish(&self, channel: &str, value: &str) {
         let subscribers =
-            self.with_impl(|db| db.subscribers.get(channel).unwrap_or(&vec![]).clone());
+            self.with_lock(|db| db.subscribers.get(channel).unwrap_or(&vec![]).clone());
         // Subscriber functions may run for a long time, so we don't want to hold the lock
         // while they run
         for subscriber in subscribers {
@@ -101,7 +90,7 @@ impl DB {
     }
 
     pub fn subscribe(&self, channel: &str, f: impl Fn(&str, &str) + Send + Sync + 'static) {
-        self.with_impl(move |db| {
+        self.with_lock(move |db| {
             if !db.subscribers.contains_key(channel) {
                 db.subscribers.insert(channel.to_string(), vec![]);
             }

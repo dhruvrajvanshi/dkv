@@ -14,6 +14,7 @@ impl DB {
             db_impl: Arc::new(Mutex::new(DBImpl {
                 map: HashMap::new(),
                 subscribers: HashMap::new(),
+                next_subscriber_id: 0,
             })),
         }
     }
@@ -53,29 +54,58 @@ impl DB {
     }
 
     pub fn publish(&self, channel: &str, value: &str) {
-        let subscribers =
-            self.with_lock(|db| db.subscribers.get(channel).unwrap_or(&vec![]).clone());
+        let subscribers = self.with_lock(|db| {
+            db.subscribers
+                .values()
+                .filter(|it| it.channel == channel)
+                .cloned()
+                .collect::<Vec<Subscriber>>()
+        });
         // Subscriber functions may run for a long time, so we don't want to hold the lock
-        // while they run
+        // while they run, so we copy them out of the lock and then call them.
         for subscriber in subscribers {
-            subscriber(Message { channel, value })
+            (subscriber.callback)(Message { channel, value })
         }
     }
 
-    pub fn subscribe(&self, channel: &str, f: impl Fn(Message) + Send + Sync + 'static) {
+    pub fn subscribe(
+        &self,
+        channel: &str,
+        f: impl Fn(Message) + Send + Sync + 'static,
+    ) -> SubscriberId {
         self.with_lock(move |db| {
-            if !db.subscribers.contains_key(channel) {
-                db.subscribers.insert(channel.to_string(), vec![]);
-            }
-            db.subscribers.get_mut(channel).unwrap().push(Arc::new(f));
+            db.next_subscriber_id += 1;
+            let id = SubscriberId(db.next_subscriber_id);
+            db.subscribers.insert(
+                id,
+                Subscriber {
+                    callback: Arc::new(f),
+                    channel: channel.to_string(),
+                },
+            );
+            id
         })
+    }
+
+    pub fn unsubscribe(&self, id: SubscriberId) {
+        self.with_lock(|db| {
+            db.subscribers.remove(&id);
+        });
     }
 }
 
-trait SubscriberFn: FnOnce(&str, &str) + Send + Sync + 'static {}
 struct DBImpl {
     map: HashMap<String, Value>,
-    subscribers: HashMap<String, Vec<Arc<dyn Fn(Message) + Send + Sync + 'static>>>,
+    next_subscriber_id: usize,
+    subscribers: HashMap<SubscriberId, Subscriber>,
+}
+#[derive(Copy, Clone, PartialEq, Eq, Hash)]
+pub struct SubscriberId(usize);
+
+#[derive(Clone)]
+struct Subscriber {
+    pub callback: Arc<dyn Fn(Message) + Send + Sync + 'static>,
+    pub channel: String,
 }
 
 pub struct Message<'a> {
@@ -118,12 +148,34 @@ mod test {
             db.publish("channel", "message1");
             db.publish("channel", "message2");
             db.publish("channel", "message3");
-            println!("Published messages");
 
             drop(db);
         });
 
         publisher.join().unwrap();
         assert_eq!(3, *count.lock().unwrap());
+    }
+
+    #[test]
+    fn should_allow_unsubscribing() {
+        let db = DB::new();
+
+        let count = Arc::new(Mutex::new(0));
+        let subscription_id = {
+            let count = count.clone();
+            db.subscribe("channel", move |m| {
+                *count.clone().lock().unwrap() += 1;
+                assert_eq!(m.value, "message1");
+            })
+        };
+        let publisher = spawn(move || {
+            db.publish("channel", "message1");
+            db.unsubscribe(subscription_id);
+            db.publish("channel", "message2");
+            db.publish("channel", "message3");
+        });
+
+        publisher.join().unwrap();
+        assert_eq!(1, *count.lock().unwrap());
     }
 }

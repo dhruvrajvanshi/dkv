@@ -58,11 +58,11 @@ impl DB {
         // Subscriber functions may run for a long time, so we don't want to hold the lock
         // while they run
         for subscriber in subscribers {
-            subscriber(channel, value)
+            subscriber(Message { channel, value })
         }
     }
 
-    pub fn subscribe(&self, channel: &str, f: impl Fn(&str, &str) + Send + Sync + 'static) {
+    pub fn subscribe(&self, channel: &str, f: impl Fn(Message) + Send + Sync + 'static) {
         self.with_lock(move |db| {
             if !db.subscribers.contains_key(channel) {
                 db.subscribers.insert(channel.to_string(), vec![]);
@@ -72,9 +72,15 @@ impl DB {
     }
 }
 
+trait SubscriberFn: FnOnce(&str, &str) + Send + Sync + 'static {}
 struct DBImpl {
     map: HashMap<String, Value>,
-    subscribers: HashMap<String, Vec<Arc<dyn Fn(&str, &str) + Send + Sync + 'static>>>,
+    subscribers: HashMap<String, Vec<Arc<dyn Fn(Message) + Send + Sync + 'static>>>,
+}
+
+pub struct Message<'a> {
+    pub channel: &'a str,
+    pub value: &'a str,
 }
 
 #[cfg(test)]
@@ -101,10 +107,10 @@ mod test {
         let count = Arc::new(Mutex::new(0));
         {
             let count = count.clone();
-            db.subscribe("channel", move |_, message| {
+            db.subscribe("channel", move |m| {
                 *count.clone().lock().unwrap() += 1;
                 let count = *count.clone().lock().unwrap();
-                assert_eq!(message, format!("message{}", count));
+                assert_eq!(m.value, format!("message{}", count));
             });
         }
         let publisher = spawn(move || {

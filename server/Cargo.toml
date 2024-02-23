@@ -2,3 +2,6 @@
 name = "dkv"
 version = "0.1.0"
 edition = "2021"
+
+[dependencies]
+dkv_db = { path = "../db" }

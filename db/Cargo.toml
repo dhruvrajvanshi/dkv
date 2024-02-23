@@ -1,0 +1,9 @@
+[package]
+name = "dkv_db"
+version = "0.1.0"
+edition = "2021"
+description = "Embedded key-value datbase library, optionally backed by a file"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]

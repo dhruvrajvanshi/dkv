@@ -6,13 +6,12 @@ use std::{
 mod codec;
 mod command;
 mod connection;
-mod db;
 mod error;
 mod serializable;
 mod streamext;
 mod value;
 
-use db::DB;
+use dkv_db::DB;
 use error::Error;
 use value::Value;
 

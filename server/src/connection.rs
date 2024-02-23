@@ -6,7 +6,6 @@ use std::{
 use crate::{
     codec::{self, write_bulk_string},
     command::Command,
-    db::{self, DB},
     error::{BadMessageError, Error},
     serializable::{Deserializable, Serializable},
     value::Value,
@@ -14,6 +13,8 @@ use crate::{
 };
 
 use crate::command::make_command_docs;
+use db::DB;
+use dkv_db as db;
 
 #[derive(Debug, Copy, Clone)]
 enum Protocol {
@@ -343,6 +344,8 @@ impl Serializable for db::Value {
 #[cfg(test)]
 mod test {
     use std::vec;
+
+    use db::DB;
 
     use crate::codec;
 

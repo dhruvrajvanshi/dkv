@@ -108,6 +108,7 @@ struct Subscriber {
     pub channel: String,
 }
 
+#[derive(Debug)]
 pub struct Message<'a> {
     pub channel: &'a str,
     pub value: &'a str,

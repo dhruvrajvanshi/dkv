@@ -8,7 +8,6 @@ mod command;
 mod connection;
 mod error;
 mod serializable;
-mod streamext;
 mod value;
 
 use dkv_db::DB;
@@ -65,12 +64,11 @@ impl Server {
             }
         });
         for stream in self.listener.incoming() {
-            let (reader, writer) = streamext::split(stream?);
             let db = self.db.clone();
             let s = handle_sender.clone();
             let handle = std::thread::spawn(move || {
                 dbg!("Accepted new connection");
-                Connection::new(db, reader, writer).handle().unwrap();
+                Connection::new(db, stream.unwrap()).handle().unwrap();
                 dbg!("Handled connection");
                 s.send(HandleCommand::Stop(std::thread::current().id()))
                     .unwrap();

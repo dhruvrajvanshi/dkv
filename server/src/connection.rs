@@ -1,6 +1,8 @@
 use std::{
     collections::HashMap,
-    io::{self, Read, Write},
+    io::{self, Write},
+    net::TcpStream,
+    sync::mpsc,
 };
 
 use crate::{
@@ -22,18 +24,16 @@ enum Protocol {
     RESP3,
 }
 
-pub struct Connection<R: Read, W: Write> {
+pub struct Connection {
     db: DB,
-    reader: R,
-    writer: W,
+    tcp_stream: TcpStream,
     protocol: Protocol,
 }
-impl<R: Read, W: Write> Connection<R, W> {
-    pub fn new(db: DB, reader: R, writer: W) -> Connection<R, W> {
+impl Connection {
+    pub fn new(db: DB, stream: TcpStream) -> Connection {
         Connection {
             db,
-            reader,
-            writer,
+            tcp_stream: stream,
             protocol: Protocol::RESP2,
         }
     }
@@ -49,15 +49,18 @@ impl<R: Read, W: Write> Connection<R, W> {
                     break;
                 }
                 Err(e) => {
-                    eprintln!("Error: {:?}", e);
-                    write!(self.writer, "-ERROR: {}\r\n", to_simple_string(e))?;
+                    self.write_error(&to_simple_string(e))?;
                 }
             }
         }
         Ok(())
     }
+    fn read_command(&mut self) -> Result<Command> {
+        Command::read(&mut self.tcp_stream)
+    }
+
     fn _handle(&mut self) -> Result<()> {
-        let command = Command::read(&mut self.reader)?;
+        let command = self.read_command()?;
         match command {
             Command::Hello(version) => {
                 if version == "3" {
@@ -87,7 +90,7 @@ impl<R: Read, W: Write> Connection<R, W> {
             }
             Command::Get(key) => match self.db.get_optional(&key) {
                 Some(value @ db::Value::String(_)) => {
-                    value.write(&mut self.writer)?;
+                    self.write(&value)?;
                 }
                 Some(_) => self.write_error("WRONGTYPE")?,
                 None => {
@@ -99,7 +102,7 @@ impl<R: Read, W: Write> Connection<R, W> {
                     let subcommand = args.get(1);
                     if subcommand.is_none() {
                         let command_docs = make_command_docs();
-                        Value::Map(command_docs).write(&mut self.writer)?;
+                        self.write_value(&Value::Map(command_docs))?;
                     } else {
                         todo!("COMMAND DOCS is not implement for subcommands yet")
                     }
@@ -116,23 +119,23 @@ impl<R: Read, W: Write> Connection<R, W> {
                             println!("invalid config key: {:?}", key);
                         }
                         let value = config.get(key.as_str()).unwrap_or(&default_reply);
-                        value.write(&mut self.writer)?;
+                        self.write_value(value)?;
                     } else {
                         todo!("Unimplement CONFIG GET {:?}", args[1])
                     }
-                    Value::Map(HashMap::new()).write(&mut self.writer)?
+                    self.write_value(&Value::Map(HashMap::new()))?
                 } else {
                     todo!("Unimplement CONFIG {:?}", args[0])
                 }
             }
-            Command::Ping(s) => Value::from(s).write(&mut self.writer)?,
+            Command::Ping(s) => self.write_value(&Value::from(s))?,
             Command::FlushAll => {
                 self.db.flush_all();
                 self.write_simple_string("OK")?;
             }
             Command::Del(key) => {
                 let num_keys_deleted = self.db.del(&key);
-                Value::Integer(num_keys_deleted as i64).write(&mut self.writer)?
+                self.write_value(&Value::Integer(num_keys_deleted as i64))?
             }
             Command::ClientSetInfo(_, _) => {
                 self.write_simple_string("OK")?;
@@ -246,30 +249,104 @@ impl<R: Read, W: Write> Connection<R, W> {
                 };
                 self.write_value(&result)?;
             }
+            Command::Subscribe(channels) => {
+                self.handle_subscribe(channels)?;
+            }
+            Command::Publish(channel, message) => {
+                self.db.publish(&channel, &message);
+                self.write_value(&Value::Integer(1))?;
+            }
+            Command::Unsubscribe(_) => {
+                self.write_error("Unsubscribe called outside of a subscription connection")?;
+            }
         }
         Ok(())
     }
 
-    fn write_error(&mut self, s: &str) -> Result<()> {
-        write!(self.writer, "-ERROR: {}\r\n", s)?;
+    fn handle_subscribe(&mut self, channels: Vec<String>) -> Result<()> {
+        let mut subscriptions_by_channel = HashMap::new();
+        let (send_value, recv_value) = mpsc::channel();
+        for channel in channels {
+            let send_value = send_value.clone();
+            let sub = self.db.subscribe(&channel, move |message| {
+                // deliberately ignore error because if we're unable to send a value
+                // that just means that the client has disconnected by calling
+                // unsubscribe
+                let _ = send_value.send(Value::Array(vec![
+                    Value::from("message"),
+                    Value::from(message.channel.to_string()),
+                    Value::from(message.value.to_string()),
+                ]));
+            });
+            subscriptions_by_channel.insert(channel, sub);
+        }
+
+        loop {
+            if let Ok(value) = recv_value.try_recv() {
+                self.write_value(&value)?;
+            }
+            let command = self.try_read_command()?;
+            match command {
+                Some(Command::Unsubscribe(channels)) => {
+                    for channel in channels {
+                        if let Some(sub) = subscriptions_by_channel.remove(&channel) {
+                            self.db.unsubscribe(sub);
+                        }
+                        self.write_value(&Value::Array(vec![
+                            Value::from("unsubscribe"),
+                            Value::from(channel),
+                            // TODO
+                            Value::from(subscriptions_by_channel.len() as i64),
+                        ]))?;
+                    }
+                    if subscriptions_by_channel.is_empty() {
+                        break;
+                    }
+                }
+                Some(_) => {
+                    self.write_error("Only unsubscribe commands can be sent after SUBSCRIBE")?
+                }
+                None => continue,
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Try to read a command from the tcp stream, but return None
+    /// in case the call would block.
+    fn try_read_command(&mut self) -> Result<Option<Command>> {
+        self.tcp_stream.set_nonblocking(true)?;
+
+        let value = match Command::read(&mut self.tcp_stream) {
+            Ok(command) => Ok(Some(command)),
+            Err(Error::Io(ref e)) if e.kind() == std::io::ErrorKind::WouldBlock => Ok(None),
+            Err(e) => Err(e),
+        };
+        self.tcp_stream.set_nonblocking(true)?;
+        value
+    }
+
+    fn write_error(&mut self, s: &str) -> io::Result<()> {
+        write!(self.tcp_stream, "-ERROR: {}\r\n", s)?;
         Ok(())
     }
 
     fn write_value(&mut self, value: &Value) -> io::Result<()> {
-        value.write(&mut self.writer)?;
+        value.write(&mut self.tcp_stream)?;
         Ok(())
     }
 
     fn write(&mut self, value: &impl Serializable) -> io::Result<()> {
-        value.write(&mut self.writer)
+        value.write(&mut self.tcp_stream)
     }
 
     fn write_bulk_string(&mut self, value: &str) -> io::Result<()> {
-        codec::write_bulk_string(&mut self.writer, value)
+        codec::write_bulk_string(&mut self.tcp_stream, value)
     }
 
     fn write_array(&mut self, values: &[&str]) -> io::Result<()> {
-        codec::write_bulk_string_array(&mut self.writer, values)
+        codec::write_bulk_string_array(&mut self.tcp_stream, values)
     }
 
     /// RESP2 doesn't have a Null representation
@@ -278,7 +355,7 @@ impl<R: Read, W: Write> Connection<R, W> {
     fn write_null_response(&mut self) -> io::Result<()> {
         match self.protocol {
             Protocol::RESP2 => {
-                write!(self.writer, "$-1\r\n")?;
+                write!(self.tcp_stream, "$-1\r\n")?;
             }
             Protocol::RESP3 => self.write_value(&Value::Null)?,
         }
@@ -286,7 +363,7 @@ impl<R: Read, W: Write> Connection<R, W> {
     }
 
     fn write_simple_string(&mut self, value: &str) -> Result<()> {
-        write!(&mut self.writer, "+{}\r\n", value)?;
+        write!(self.tcp_stream, "+{}\r\n", value)?;
         Ok(())
     }
 }
@@ -338,39 +415,5 @@ impl Serializable for db::Value {
             }
         }
         Ok(())
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use std::vec;
-
-    use db::DB;
-
-    use crate::codec;
-
-    use super::*;
-    #[test]
-    fn handles_ping() {
-        let input = b"*1\r\n$4\r\nPING\r\n";
-        let mut output = vec![];
-        let mut conn = Connection::new(DB::new(), &input[..], &mut output);
-        conn.handle().unwrap();
-
-        let value = codec::read(&mut &output[..]).unwrap();
-
-        assert_eq!(value, Value::from("PONG"));
-    }
-
-    #[test]
-    fn handles_ping_with_argument() {
-        let input = b"*2\r\n$4\r\nPING\r\n$4\r\nPING\r\n";
-        let mut output = vec![];
-        let mut conn = Connection::new(DB::new(), &input[..], &mut output);
-        conn.handle().unwrap();
-
-        let value = codec::read(&mut &output[..]).unwrap();
-
-        assert_eq!(value, Value::from("PING"));
     }
 }

@@ -321,6 +321,13 @@ impl Connection {
                         break;
                     }
                 }
+                Some(Command::Quit) => {
+                    for (_, id) in subscriptions_by_channel.drain() {
+                        self.db.unsubscribe(id);
+                    }
+                    self.write_simple_string("OK")?;
+                    break;
+                }
                 Some(_) => {
                     self.write_error("Only unsubscribe commands can be sent after SUBSCRIBE")?
                 }

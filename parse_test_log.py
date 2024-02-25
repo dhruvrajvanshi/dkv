@@ -36,6 +36,9 @@ def main():
             if not line.startswith("test: "):
                 continue
             match = regex.match(line)
+            if not match:
+                print(f"Unexpected test line: {line}", file=sys.stderr)
+                continue
             test = match.group("test").removesuffix(" tags")
             result = match.group("result")
             test_json = json.dumps(test_suite_by_name[test], indent=2)

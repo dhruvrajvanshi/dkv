@@ -7,6 +7,8 @@ mod kqueue {
 
     use libc::{exit, kevent, perror};
 
+    type Callback = Box<dyn Fn(&EventLoop)>;
+
     struct EventLoop {
         kq: KQueue,
         next_id: RefCell<usize>,
@@ -72,7 +74,7 @@ mod kqueue {
                 match self.callbacks.try_lock() {
                     Ok(callbacks) => {
                         if let Some(cb) = callbacks.get(&ident) {
-                            cb(self);
+                            (*cb)(self);
                         } // else, event cancelled
                     }
                     Err(_) => {

@@ -29,6 +29,11 @@ pub struct Connection {
     tcp_stream: TcpStream,
     protocol: Protocol,
 }
+enum HandleResult {
+    Continue,
+    Quit,
+}
+
 impl Connection {
     pub fn new(db: DB, stream: TcpStream) -> Connection {
         Connection {
@@ -40,7 +45,8 @@ impl Connection {
     pub fn handle(&mut self) -> std::io::Result<()> {
         loop {
             match self._handle() {
-                Ok(()) => {}
+                Ok(HandleResult::Continue) => {}
+                Ok(HandleResult::Quit) => break,
                 Err(Error::Io(ref e)) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
                     // When redis-cli quits, it just closes the connection,
                     // which means when we try to read the next command, we get
@@ -59,7 +65,7 @@ impl Connection {
         Command::read(&mut self.tcp_stream)
     }
 
-    fn _handle(&mut self) -> Result<()> {
+    fn _handle(&mut self) -> Result<HandleResult> {
         let command = self.read_command()?;
         match command {
             Command::Hello(version) => {
@@ -259,8 +265,12 @@ impl Connection {
             Command::Unsubscribe(_) => {
                 self.write_error("Unsubscribe called outside of a subscription connection")?;
             }
+            Command::Quit => {
+                self.write_simple_string("OK")?;
+                return Ok(HandleResult::Quit);
+            }
         }
-        Ok(())
+        Ok(HandleResult::Continue)
     }
 
     fn handle_subscribe(&mut self, channels: Vec<String>) -> Result<()> {
@@ -268,17 +278,26 @@ impl Connection {
         let (send_value, recv_value) = mpsc::channel();
         for channel in channels {
             let send_value = send_value.clone();
+            let send_value_sub = send_value.clone();
             let sub = self.db.subscribe(&channel, move |message| {
                 // deliberately ignore error because if we're unable to send a value
                 // that just means that the client has disconnected by calling
                 // unsubscribe
-                let _ = send_value.send(Value::Array(vec![
+                let _ = send_value_sub.send(Value::Array(vec![
                     Value::from("message"),
                     Value::from(message.channel.to_string()),
                     Value::from(message.value.to_string()),
                 ]));
             });
-            subscriptions_by_channel.insert(channel, sub);
+            subscriptions_by_channel.insert(channel.clone(), sub);
+            send_value
+                .send(Value::Array(vec![
+                    Value::from("subscribe"),
+                    Value::from(channel),
+                    // TODO
+                    Value::from(subscriptions_by_channel.len() as i64),
+                ]))
+                .unwrap();
         }
 
         loop {
@@ -295,7 +314,6 @@ impl Connection {
                         self.write_value(&Value::Array(vec![
                             Value::from("unsubscribe"),
                             Value::from(channel),
-                            // TODO
                             Value::from(subscriptions_by_channel.len() as i64),
                         ]))?;
                     }

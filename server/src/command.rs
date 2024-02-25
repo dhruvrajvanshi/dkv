@@ -37,6 +37,7 @@ pub enum Command {
     Subscribe(Vec<String>),
     Publish(String, String),
     Unsubscribe(Vec<String>),
+    Quit,
 }
 
 impl Deserializable for Command {
@@ -77,6 +78,7 @@ impl Deserializable for Command {
             ("SUBSCRIBE", channels) => c::Subscribe(channels.to_vec()),
             ("PUBLISH", [channel, message]) => c::Publish(channel.clone(), message.clone()),
             ("UNSUBSCRIBE", channels) => c::Unsubscribe(channels.to_vec()),
+            ("QUIT", []) => c::Quit,
             _ => return Err(Error::generic("Invalid command", format!("{:?}", command))),
         };
         Ok(c)

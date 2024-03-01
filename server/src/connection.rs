@@ -10,8 +10,8 @@ use crate::{
     command::Command,
     error::{BadMessageError, Error},
     serializable::{Deserializable, Serializable},
+    server::Result,
     value::Value,
-    Result,
 };
 
 use crate::command::make_command_docs;
@@ -61,7 +61,7 @@ impl Connection {
         }
         Ok(())
     }
-    fn read_command(&mut self) -> Result<Command> {
+    fn read_command(&mut self) -> codec::Result<Command> {
         Command::read(&mut self.tcp_stream)
     }
 

@@ -2,6 +2,7 @@ use std::{
     collections::HashMap,
     io::{self, Write},
     net::TcpStream,
+    sync::mpsc::{Receiver, Sender},
 };
 
 use crate::{
@@ -28,6 +29,8 @@ pub struct Connection {
     tcp_stream: TcpStream,
     protocol: Protocol,
     subscriptions_by_channel: HashMap<String, SubscriberId>,
+    subscription_sender: Sender<(String, String)>,
+    subscription_receiver: Receiver<(String, String)>,
 }
 enum HandleResult {
     Continue,
@@ -40,15 +43,25 @@ pub enum HandleIfReadyResult {
 }
 impl Connection {
     pub fn new(db: DB, stream: TcpStream) -> Connection {
+        let (subscription_sender, subscription_receiver) = std::sync::mpsc::channel();
         Connection {
             db,
             tcp_stream: stream,
             protocol: Protocol::RESP2,
             subscriptions_by_channel: HashMap::new(),
+            subscription_receiver,
+            subscription_sender,
         }
     }
 
     pub fn handle_if_ready(&mut self) -> Result<HandleIfReadyResult> {
+        if let Some((channel, message)) = self.subscription_receiver.try_recv().ok() {
+            self.write_value(&Value::Array(vec![
+                Value::from("message"),
+                Value::from(channel),
+                Value::from(message),
+            ]))?;
+        }
         if let Some(command) = self.try_read_command()? {
             return match self._handle(command) {
                 Ok(HandleResult::Continue) => Ok(HandleIfReadyResult::Ok),
@@ -295,8 +308,11 @@ impl Connection {
 
     fn handle_subscribe(&mut self, channels: Vec<String>) -> Result<()> {
         for channel in channels {
-            let sub = self.db.subscribe(&channel, move |_| {
-                // TODO: Do something here
+            let sender = self.subscription_sender.clone();
+            let sub = self.db.subscribe(&channel, move |message| {
+                sender
+                    .send((message.channel.to_string(), message.value.to_string()))
+                    .unwrap();
             });
             self.subscriptions_by_channel.insert(channel.clone(), sub);
             self.write_value(&Value::Array(vec![
@@ -318,6 +334,7 @@ impl Connection {
         let value = match Command::read(&mut self.tcp_stream) {
             Ok(command) => Ok(Some(command)),
             Err(Error::Io(ref e)) if e.kind() == std::io::ErrorKind::WouldBlock => Ok(None),
+            Err(Error::Io(ref e)) if e.kind() == std::io::ErrorKind::UnexpectedEof => Ok(None),
             Err(e) => Err(e),
         };
         self.tcp_stream.set_nonblocking(true)?;

@@ -2,7 +2,6 @@ use std::{
     collections::HashMap,
     io::{self, Write},
     net::TcpStream,
-    sync::mpsc,
 };
 
 use crate::{
@@ -15,7 +14,7 @@ use crate::{
 };
 
 use crate::command::make_command_docs;
-use db::DB;
+use db::{SubscriberId, DB};
 use dkv_db as db;
 
 #[derive(Debug, Copy, Clone)]
@@ -28,45 +27,50 @@ pub struct Connection {
     db: DB,
     tcp_stream: TcpStream,
     protocol: Protocol,
+    subscriptions_by_channel: HashMap<String, SubscriberId>,
 }
 enum HandleResult {
     Continue,
     Quit,
 }
-
+pub enum HandleIfReadyResult {
+    Disconnect,
+    Ok,
+    Yield,
+}
 impl Connection {
     pub fn new(db: DB, stream: TcpStream) -> Connection {
         Connection {
             db,
             tcp_stream: stream,
             protocol: Protocol::RESP2,
+            subscriptions_by_channel: HashMap::new(),
         }
     }
-    pub fn handle(&mut self) -> std::io::Result<()> {
-        loop {
-            match self._handle() {
-                Ok(HandleResult::Continue) => {}
-                Ok(HandleResult::Quit) => break,
+
+    pub fn handle_if_ready(&mut self) -> Result<HandleIfReadyResult> {
+        if let Some(command) = self.try_read_command()? {
+            return match self._handle(command) {
+                Ok(HandleResult::Continue) => Ok(HandleIfReadyResult::Ok),
+                Ok(HandleResult::Quit) => Ok(HandleIfReadyResult::Disconnect),
                 Err(Error::Io(ref e)) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
                     // When redis-cli quits, it just closes the connection,
                     // which means when we try to read the next command, we get
                     // an UnexpectedEof error. We should just break the loop to
                     // handle this case.
-                    break;
+                    Ok(HandleIfReadyResult::Disconnect)
                 }
                 Err(e) => {
-                    self.write_error(&to_simple_string(e))?;
+                    self.write_error(&to_simple_string(&e))?;
+                    Err(e)
                 }
-            }
+            };
+        } else {
+            Ok(HandleIfReadyResult::Yield)
         }
-        Ok(())
-    }
-    fn read_command(&mut self) -> codec::Result<Command> {
-        Command::read(&mut self.tcp_stream)
     }
 
-    fn _handle(&mut self) -> Result<HandleResult> {
-        let command = self.read_command()?;
+    fn _handle(&mut self, command: Command) -> Result<HandleResult> {
         match command {
             Command::Hello(version) => {
                 if version == "3" {
@@ -262,10 +266,26 @@ impl Connection {
                 self.db.publish(&channel, &message);
                 self.write_value(&Value::Integer(1))?;
             }
-            Command::Unsubscribe(_) => {
-                self.write_error("Unsubscribe called outside of a subscription connection")?;
+            Command::Unsubscribe(channels) => {
+                if self.subscriptions_by_channel.len() == 0 {
+                    self.write_error("Unsubscribe called outside of a subscription connection")?;
+                } else {
+                    for channel in channels {
+                        if let Some(sub) = self.subscriptions_by_channel.remove(&channel) {
+                            self.db.unsubscribe(sub);
+                        }
+                        self.write_value(&Value::Array(vec![
+                            Value::from("unsubscribe"),
+                            Value::from(channel),
+                            Value::from(self.subscriptions_by_channel.len() as i64),
+                        ]))?;
+                    }
+                }
             }
             Command::Quit => {
+                for (_, id) in self.subscriptions_by_channel.drain() {
+                    self.db.unsubscribe(id);
+                }
                 self.write_simple_string("OK")?;
                 return Ok(HandleResult::Quit);
             }
@@ -274,65 +294,17 @@ impl Connection {
     }
 
     fn handle_subscribe(&mut self, channels: Vec<String>) -> Result<()> {
-        let mut subscriptions_by_channel = HashMap::new();
-        let (send_value, recv_value) = mpsc::channel();
         for channel in channels {
-            let send_value = send_value.clone();
-            let send_value_sub = send_value.clone();
-            let sub = self.db.subscribe(&channel, move |message| {
-                // deliberately ignore error because if we're unable to send a value
-                // that just means that the client has disconnected by calling
-                // unsubscribe
-                let _ = send_value_sub.send(Value::Array(vec![
-                    Value::from("message"),
-                    Value::from(message.channel.to_string()),
-                    Value::from(message.value.to_string()),
-                ]));
+            let sub = self.db.subscribe(&channel, move |_| {
+                // TODO: Do something here
             });
-            subscriptions_by_channel.insert(channel.clone(), sub);
-            send_value
-                .send(Value::Array(vec![
-                    Value::from("subscribe"),
-                    Value::from(channel),
-                    // TODO
-                    Value::from(subscriptions_by_channel.len() as i64),
-                ]))
-                .unwrap();
-        }
-
-        loop {
-            if let Ok(value) = recv_value.try_recv() {
-                self.write_value(&value)?;
-            }
-            let command = self.try_read_command()?;
-            match command {
-                Some(Command::Unsubscribe(channels)) => {
-                    for channel in channels {
-                        if let Some(sub) = subscriptions_by_channel.remove(&channel) {
-                            self.db.unsubscribe(sub);
-                        }
-                        self.write_value(&Value::Array(vec![
-                            Value::from("unsubscribe"),
-                            Value::from(channel),
-                            Value::from(subscriptions_by_channel.len() as i64),
-                        ]))?;
-                    }
-                    if subscriptions_by_channel.is_empty() {
-                        break;
-                    }
-                }
-                Some(Command::Quit) => {
-                    for (_, id) in subscriptions_by_channel.drain() {
-                        self.db.unsubscribe(id);
-                    }
-                    self.write_simple_string("OK")?;
-                    break;
-                }
-                Some(_) => {
-                    self.write_error("Only unsubscribe commands can be sent after SUBSCRIBE")?
-                }
-                None => continue,
-            }
+            self.subscriptions_by_channel.insert(channel.clone(), sub);
+            self.write_value(&Value::Array(vec![
+                Value::from("subscribe"),
+                Value::from(channel),
+                // TODO
+                Value::from(self.subscriptions_by_channel.len() as i64),
+            ]))?;
         }
 
         Ok(())
@@ -401,7 +373,7 @@ fn get_default_config() -> HashMap<&'static str, Value> {
     config
 }
 
-fn to_simple_string(e: Error) -> String {
+fn to_simple_string(e: &Error) -> String {
     match e {
         // there's no guarantee that io::Error contains characters that are safe
         // to send as part of a simple string, so we'll just send a generic error
@@ -411,7 +383,7 @@ fn to_simple_string(e: Error) -> String {
         Error::BadMessage(BadMessageError::InvalidLength(_)) => {
             String::from("Invalid length for a bulk string")
         }
-        Error::BadMessage(BadMessageError::Generic(s, _)) => s,
+        Error::BadMessage(BadMessageError::Generic(s, _)) => s.clone(),
         Error::BadMessage(BadMessageError::Utf8(_)) => String::from("Invalid UTF-8"),
         Error::UnexpectedStartOfValue(c) => {
             format!("Unexpected start of value: {}", c)

@@ -1,5 +1,5 @@
 use thiserror::Error;
-use tokio::io::{self, AsyncRead, AsyncReadExt};
+use tokio::io::{self, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
 #[derive(Error, Debug)]
 pub enum ParseError {
@@ -58,4 +58,14 @@ pub async fn parse_len<R: AsyncRead + Unpin>(reader: &mut R) -> Result<usize> {
     Ok(buf
         .parse()
         .map_err(|_| ParseError::InvalidMessage("Invalid length".to_string()))?)
+}
+
+pub async fn write_error_string<W: AsyncWrite + Unpin>(
+    writer: &mut W,
+    message: &str,
+) -> tokio::io::Result<()> {
+    writer.write_all(b"-ERR ").await?;
+    writer.write_all(message.as_bytes()).await?;
+    writer.write_all(b"\r\n").await?;
+    Ok(())
 }

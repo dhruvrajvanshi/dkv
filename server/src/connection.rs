@@ -1,4 +1,4 @@
-use tokio::{io::AsyncWriteExt, net::TcpStream};
+use tokio::net::TcpStream;
 use tracing::{debug, error};
 
 use crate::protocol;
@@ -11,7 +11,7 @@ pub async fn handle_connection(socket: TcpStream, _connection_id: usize) -> toki
         match protocol::parse_array(&mut reader).await {
             Ok(arr) => {
                 debug!("Received command: {:?}", arr);
-                writer.write_all(b"+OK\r\n").await?;
+                protocol::write_error_string(&mut writer, "Unimplemented").await?;
             }
             Err(e) => {
                 error!("Error parsing message: {:?}", e);

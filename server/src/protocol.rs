@@ -130,14 +130,14 @@ pub async fn write_value<W: AsyncWrite + Unpin>(
 ) -> tokio::io::Result<()> {
     match value {
         Value::String(s) => write_bulk_string(writer, s).await,
-        Value::Integer(i) => write_integer(writer, i).await,
+        Value::Integer(i) => write_integer(writer, *i).await,
         _ => todo!("write_value for map unimplemented; Use write_map instead"),
     }
 }
 
 pub async fn write_integer<W: AsyncWrite + Unpin>(
     writer: &mut W,
-    value: &i64,
+    value: i64,
 ) -> tokio::io::Result<()> {
     writer.write_all(b":").await?;
     writer.write_all(value.to_string().as_bytes()).await?;

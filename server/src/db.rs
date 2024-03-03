@@ -20,31 +20,53 @@ impl DB {
     }
 
     pub async fn get(&self, key: &ByteStr) -> Result<Option<Value>> {
-        self.view(|m| m.get(key).cloned())
+        Ok(self.view(|m| m.get(key).cloned()).await)
+    }
+
+    pub async fn hset(&self, key: ByteStr, field: ByteStr, value: ByteStr) -> Result<HSetResult> {
+        self.mutate(|m| match m.get(&key) {
+            Some(Value::Hash(h)) => {
+                let mut h = h.clone();
+                let result = h.insert(field, value);
+                m.insert(key, Value::Hash(h));
+                Ok(HSetResult::Ok(result.map(|it| Value::String(it))))
+            }
+            None => {
+                let mut h = HashMap::new();
+                h.insert(field, value);
+                m.insert(key, Value::Hash(h));
+                Ok(HSetResult::Ok(None))
+            }
+            Some(_) => Ok(HSetResult::NotAMap),
+        })
+        .await
     }
 
     pub async fn set(&self, key: &ByteStr, value: ByteStr) -> Result<Option<Value>> {
-        self.mutate(|m| m.insert(key.clone(), Value::String(value)))
+        Ok(self
+            .mutate(|m| m.insert(key.clone(), Value::String(value)))
+            .await)
     }
 
     pub async fn flush_all(&self) -> Result<()> {
-        self.mutate(|m| m.clear())
+        let result = self.mutate(|m| m.clear());
+        Ok(result.await)
     }
 
-    fn mutate<F, R>(&self, f: F) -> Result<R>
+    async fn mutate<F, R>(&self, f: F) -> R
     where
         F: FnOnce(&mut HashMap<ByteStr, Value>) -> R,
     {
         let mut data = self.data.write().unwrap();
-        Ok(f(&mut data))
+        f(&mut data)
     }
 
-    fn view<F, R>(&self, f: F) -> Result<R>
+    async fn view<F, R>(&self, f: F) -> R
     where
         F: FnOnce(&HashMap<ByteStr, Value>) -> R,
     {
         let data = self.data.read().unwrap();
-        Ok(f(&data))
+        f(&data)
     }
 }
 
@@ -53,4 +75,9 @@ pub enum Value {
     String(ByteStr),
     List(Vec<ByteStr>),
     Hash(HashMap<ByteStr, ByteStr>),
+}
+
+pub enum HSetResult {
+    Ok(Option<Value>),
+    NotAMap,
 }

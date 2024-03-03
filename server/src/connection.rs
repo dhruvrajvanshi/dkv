@@ -6,7 +6,7 @@ use tracing::{debug, error};
 
 use crate::{
     bytestr::ByteStr,
-    db::{self, DB},
+    db::{self, HSetResult, DB},
     protocol,
 };
 
@@ -126,6 +126,10 @@ impl Connection {
             Command::Exists(_) => {
                 protocol::write_error_string(&mut self.writer, "Unimplemented").await?;
             }
+            Command::HSet { key, field, value } => match self.db.hset(key, field, value).await? {
+                HSetResult::Ok(_) => self.write_integer(1).await?,
+                HSetResult::NotAMap => self.write_error_string("WRONGTYPE").await?,
+            },
             Command::FlushAll => {
                 self.db.flush_all().await?;
                 self.write_simple_string("OK").await?;
@@ -152,6 +156,10 @@ impl Connection {
             ProtocolVersion::RESP3 => protocol::write_null(&mut self.writer).await,
         }
     }
+
+    async fn write_integer(&mut self, value: i64) -> tokio::io::Result<()> {
+        protocol::write_integer(&mut self.writer, value).await
+    }
 }
 
 enum Command {
@@ -161,6 +169,11 @@ enum Command {
     Set(ByteStr, ByteStr),
     Del(ByteStr),
     Exists(ByteStr),
+    HSet {
+        key: ByteStr,
+        field: ByteStr,
+        value: ByteStr,
+    },
     FlushAll,
 }
 
@@ -225,6 +238,17 @@ impl Command {
                     err("EXISTS requires 1 argument")
                 } else {
                     Ok(Command::Exists(parts[1].clone()))
+                }
+            }
+            b"HSET" => {
+                if parts.len() != 4 {
+                    err("HSET requires 3 arguments")
+                } else {
+                    Ok(Command::HSet {
+                        key: parts[1].clone(),
+                        field: parts[2].clone(),
+                        value: parts[3].clone(),
+                    })
                 }
             }
             b"FLUSHALL" => {

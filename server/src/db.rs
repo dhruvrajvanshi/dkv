@@ -48,6 +48,19 @@ impl DB {
             .await)
     }
 
+    pub async fn rename(&self, key: &ByteStr, new_key: ByteStr) -> Result<RenameResult> {
+        Ok(self
+            .mutate(|m| -> RenameResult {
+                if let Some(value) = m.remove(key) {
+                    m.insert(new_key, value);
+                    RenameResult::Renamed
+                } else {
+                    RenameResult::KeyNotFound
+                }
+            })
+            .await)
+    }
+
     pub async fn flush_all(&self) -> Result<()> {
         let result = self.mutate(|m| m.clear());
         Ok(result.await)
@@ -80,4 +93,8 @@ pub enum Value {
 pub enum HSetResult {
     Ok(Option<Value>),
     NotAMap,
+}
+pub enum RenameResult {
+    Renamed,
+    KeyNotFound,
 }

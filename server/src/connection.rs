@@ -120,6 +120,10 @@ impl Connection {
                 self.db.set(key, value).await?;
                 self.write_simple_string("OK").await?
             }
+            Command::Rename(key, value) => match self.db.rename(&key, value).await? {
+                db::RenameResult::Renamed => self.write_simple_string("OK").await?,
+                db::RenameResult::KeyNotFound => self.write_error_string("no such key").await?,
+            },
             Command::Del(_) => {
                 protocol::write_error_string(&mut self.writer, "Unimplemented").await?;
             }
@@ -167,6 +171,7 @@ enum Command {
     ClientSetInfo(ByteStr, ByteStr),
     Get(ByteStr),
     Set(ByteStr, ByteStr),
+    Rename(ByteStr, ByteStr),
     Del(ByteStr),
     Exists(ByteStr),
     HSet {
@@ -188,7 +193,7 @@ impl Command {
         fn err(s: impl Into<String>) -> std::result::Result<Command, DecodeError> {
             std::result::Result::Err(DecodeError::UnparsableCommand(s.into()))
         }
-        match parts[0].deref() {
+        match parts[0].to_ascii_uppercase().deref() {
             b"CLIENT" => {
                 if parts.len() < 2 {
                     err("CLIENT requires at least 1 argument")
@@ -256,6 +261,13 @@ impl Command {
                     err("FLUSHALL requires 0 arguments")
                 } else {
                     Ok(Command::FlushAll)
+                }
+            }
+            b"RENAME" => {
+                if parts.len() != 3 {
+                    err("RENAME requires 2 arguments")
+                } else {
+                    Ok(Command::Rename(parts[1].clone(), parts[2].clone()))
                 }
             }
             command => err(format!(

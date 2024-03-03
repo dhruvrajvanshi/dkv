@@ -2,6 +2,7 @@ use tokio::net::TcpListener;
 use tracing::info;
 mod bytestr;
 mod connection;
+mod db;
 mod protocol;
 mod server;
 

@@ -4,8 +4,13 @@ use std::{
     ops::Deref,
 };
 
-#[derive(Clone)]
+#[derive(Clone, Hash, PartialEq, Eq)]
 pub struct ByteStr(Vec<u8>);
+impl From<&str> for ByteStr {
+    fn from(s: &str) -> Self {
+        ByteStr(s.as_bytes().to_vec())
+    }
+}
 impl From<Vec<u8>> for ByteStr {
     fn from(v: Vec<u8>) -> Self {
         ByteStr(v)

@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use thiserror::Error;
 use tokio::io::{self, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
@@ -76,5 +78,83 @@ pub async fn write_simple_string<W: AsyncWrite + Unpin>(
     writer.write_all(b"+").await?;
     writer.write_all(message.as_bytes()).await?;
     writer.write_all(b"\r\n").await?;
+    Ok(())
+}
+
+pub async fn write_bulk_string<W: AsyncWrite + Unpin>(
+    writer: &mut W,
+    value: &ByteStr,
+) -> tokio::io::Result<()> {
+    writer.write_all(b"$").await?;
+    writer.write_all(value.len().to_string().as_bytes()).await?;
+    writer.write_all(b"\r\n").await?;
+    writer.write_all(&value).await?;
+    writer.write_all(b"\r\n").await?;
+    Ok(())
+}
+
+pub async fn write_nil_reply<W: AsyncWrite + Unpin>(writer: &mut W) -> tokio::io::Result<()> {
+    writer.write_all(b"$-1\r\n").await?;
+    Ok(())
+}
+
+pub async fn write_null<W: AsyncWrite + Unpin>(writer: &mut W) -> tokio::io::Result<()> {
+    writer.write_all(b"_\r\n").await?;
+    Ok(())
+}
+
+pub enum Value {
+    String(ByteStr),
+    Integer(i64),
+    Map(HashMap<ByteStr, Value>),
+}
+impl From<&str> for Value {
+    fn from(s: &str) -> Self {
+        Value::String(ByteStr::from(s))
+    }
+}
+impl From<HashMap<ByteStr, Value>> for Value {
+    fn from(m: HashMap<ByteStr, Value>) -> Self {
+        Value::Map(m)
+    }
+}
+impl From<i64> for Value {
+    fn from(i: i64) -> Self {
+        Value::Integer(i)
+    }
+}
+
+pub async fn write_value<W: AsyncWrite + Unpin>(
+    writer: &mut W,
+    value: &Value,
+) -> tokio::io::Result<()> {
+    match value {
+        Value::String(s) => write_bulk_string(writer, s).await,
+        Value::Integer(i) => write_integer(writer, i).await,
+        _ => todo!("write_value for map unimplemented; Use write_map instead"),
+    }
+}
+
+pub async fn write_integer<W: AsyncWrite + Unpin>(
+    writer: &mut W,
+    value: &i64,
+) -> tokio::io::Result<()> {
+    writer.write_all(b":").await?;
+    writer.write_all(value.to_string().as_bytes()).await?;
+    writer.write_all(b"\r\n").await?;
+    Ok(())
+}
+
+pub async fn write_map<W: AsyncWrite + Unpin>(
+    writer: &mut W,
+    map: &[[Value; 2]],
+) -> tokio::io::Result<()> {
+    writer.write_all(b"%").await?;
+    writer.write_all(map.len().to_string().as_bytes()).await?;
+    writer.write_all(b"\r\n").await?;
+    for [key, value] in map {
+        write_value(writer, key).await?;
+        write_value(writer, value).await?;
+    }
     Ok(())
 }

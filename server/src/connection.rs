@@ -127,8 +127,9 @@ impl Connection {
             Command::Del(_) => {
                 protocol::write_error_string(&mut self.writer, "Unimplemented").await?;
             }
-            Command::Exists(_) => {
-                protocol::write_error_string(&mut self.writer, "Unimplemented").await?;
+            Command::Exists(ref keys) => {
+                let count = self.db.count(keys).await?;
+                self.write_integer(count as i64).await?
             }
             Command::HSet { key, field, value } => match self.db.hset(key, field, value).await? {
                 HSetResult::Ok(_) => self.write_integer(1).await?,
@@ -173,7 +174,7 @@ enum Command {
     Set(ByteStr, ByteStr),
     Rename(ByteStr, ByteStr),
     Del(ByteStr),
-    Exists(ByteStr),
+    Exists(Vec<ByteStr>),
     HSet {
         key: ByteStr,
         field: ByteStr,
@@ -239,10 +240,10 @@ impl Command {
                 }
             }
             b"EXISTS" => {
-                if parts.len() != 2 {
-                    err("EXISTS requires 1 argument")
+                if parts.len() < 2 {
+                    err("EXISTS requires at least 1 argument")
                 } else {
-                    Ok(Command::Exists(parts[1].clone()))
+                    Ok(Command::Exists(parts[1..].to_vec()))
                 }
             }
             b"HSET" => {

@@ -61,6 +61,12 @@ impl DB {
             .await)
     }
 
+    pub async fn count(&self, keys: &[ByteStr]) -> Result<usize> {
+        Ok(self
+            .view(|m| keys.iter().filter(|k| m.contains_key(k)).count())
+            .await)
+    }
+
     pub async fn flush_all(&self) -> Result<()> {
         let result = self.mutate(|m| m.clear());
         Ok(result.await)

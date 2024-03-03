@@ -1,6 +1,8 @@
 use thiserror::Error;
 use tokio::io::{self, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
+use crate::bytestr::ByteStr;
+
 #[derive(Error, Debug)]
 pub enum ParseError {
     #[error("I/O error: {0}")]
@@ -9,8 +11,7 @@ pub enum ParseError {
     InvalidMessage(String),
 }
 pub type Result<T> = std::result::Result<T, ParseError>;
-
-pub async fn parse_array<R: AsyncRead + Unpin>(reader: &mut R) -> Result<Vec<String>> {
+pub async fn parse_array<R: AsyncRead + Unpin>(reader: &mut R) -> Result<Vec<ByteStr>> {
     expect_char(reader, b'*').await?;
     let len = parse_len(reader).await?;
     let mut arr = Vec::with_capacity(len);
@@ -20,16 +21,14 @@ pub async fn parse_array<R: AsyncRead + Unpin>(reader: &mut R) -> Result<Vec<Str
     Ok(arr)
 }
 
-pub async fn parse_bulk_string<R: AsyncRead + Unpin>(reader: &mut R) -> Result<String> {
+pub async fn parse_bulk_string<R: AsyncRead + Unpin>(reader: &mut R) -> Result<ByteStr> {
     expect_char(reader, b'$').await?;
     let len = parse_len(reader).await?;
     let mut buf = vec![0; len];
     reader.read_exact(&mut buf).await?;
-    let buf = String::from_utf8(buf)
-        .map_err(|_| ParseError::InvalidMessage("Invalid UTF-8 in bulk string".to_string()))?;
     expect_char(reader, b'\r').await?;
     expect_char(reader, b'\n').await?;
-    Ok(buf)
+    Ok(ByteStr::from(buf))
 }
 
 async fn expect_char<R: AsyncRead + Unpin>(reader: &mut R, expected: u8) -> Result<u8> {

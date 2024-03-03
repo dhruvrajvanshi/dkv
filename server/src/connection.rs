@@ -1,8 +1,10 @@
+use std::ops::Deref;
+
 use thiserror::Error;
 use tokio::net::TcpStream;
 use tracing::{debug, error};
 
-use crate::protocol;
+use crate::{bytestr::ByteStr, protocol};
 
 pub async fn handle_connection(socket: TcpStream, connection_id: usize) -> tokio::io::Result<()> {
     let mut conn = Connection::new(socket, connection_id);
@@ -70,10 +72,10 @@ impl Connection {
     async fn handle_command(&mut self, command: Command) -> tokio::io::Result<()> {
         match command {
             Command::Hello(name) => {
-                if name.contains("2") {
+                if name.eq(b"2") {
                     self.protocol_version = ProtocolVersion::RESP2;
                     self.write_simple_string("OK").await?;
-                } else if name.contains("3") {
+                } else if name.eq(b"3") {
                     self.protocol_version = ProtocolVersion::RESP3;
                     self.write_simple_string("OK").await?;
                 } else {
@@ -112,12 +114,12 @@ impl Connection {
 }
 
 enum Command {
-    Hello(String),
-    ClientSetInfo(String, String),
-    Get(String),
-    Set(String, String),
-    Del(String),
-    Exists(String),
+    Hello(ByteStr),
+    ClientSetInfo(ByteStr, ByteStr),
+    Get(ByteStr),
+    Set(ByteStr, ByteStr),
+    Del(ByteStr),
+    Exists(ByteStr),
     FlushAll,
 }
 
@@ -128,70 +130,70 @@ enum DecodeError {
 }
 
 impl Command {
-    fn from(parts: Vec<String>) -> std::result::Result<Self, DecodeError> {
+    fn from(parts: Vec<ByteStr>) -> std::result::Result<Self, DecodeError> {
         fn err(s: impl Into<String>) -> std::result::Result<Command, DecodeError> {
             std::result::Result::Err(DecodeError::UnparsableCommand(s.into()))
         }
-        match parts[0].as_str() {
-            "CLIENT" => {
+        match parts[0].deref() {
+            b"CLIENT" => {
                 if parts.len() < 2 {
                     err("CLIENT requires at least 1 argument")
                 } else {
-                    match parts[1].as_str() {
-                        "SETINFO" => {
+                    match parts[1].deref() {
+                        b"SETINFO" => {
                             if parts.len() != 4 {
                                 err("CLIENT SETINFO requires 2 arguments")
                             } else {
                                 Ok(Command::ClientSetInfo(parts[2].clone(), parts[3].clone()))
                             }
                         }
-                        _ => err(format!("Unknown CLIENT subcommand: {}", parts[1])),
+                        _ => err(format!("Unknown CLIENT subcommand: {:?}", parts[1])),
                     }
                 }
             }
-            "HELLO" => {
+            b"HELLO" => {
                 if parts.len() != 2 {
                     err("HELLO requires 1 argument")
                 } else {
                     Ok(Command::Hello(parts[1].clone()))
                 }
             }
-            "GET" => {
+            b"GET" => {
                 if parts.len() != 2 {
                     err("GET requires 1 argument")
                 } else {
                     Ok(Command::Get(parts[1].clone()))
                 }
             }
-            "SET" => {
+            b"SET" => {
                 if parts.len() != 3 {
                     err("SET requires 2 arguments")
                 } else {
                     Ok(Command::Set(parts[1].clone(), parts[2].clone()))
                 }
             }
-            "DEL" => {
+            b"DEL" => {
                 if parts.len() != 2 {
                     err("DEL requires 1 argument")
                 } else {
                     Ok(Command::Del(parts[1].clone()))
                 }
             }
-            "EXISTS" => {
+            b"EXISTS" => {
                 if parts.len() != 2 {
                     err("EXISTS requires 1 argument")
                 } else {
                     Ok(Command::Exists(parts[1].clone()))
                 }
             }
-            "FLUSHALL" => {
+            b"FLUSHALL" => {
                 if parts.len() != 1 {
                     err("FLUSHALL requires 0 arguments")
                 } else {
                     Ok(Command::FlushAll)
                 }
             }
-            command => err(format!("Unknown command: {}", command)),
+            command => err(format!("Unknown command: {:?}", command)),
         }
     }
 }

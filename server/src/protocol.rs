@@ -69,3 +69,13 @@ pub async fn write_error_string<W: AsyncWrite + Unpin>(
     writer.write_all(b"\r\n").await?;
     Ok(())
 }
+
+pub async fn write_simple_string<W: AsyncWrite + Unpin>(
+    writer: &mut W,
+    message: &str,
+) -> tokio::io::Result<()> {
+    writer.write_all(b"+").await?;
+    writer.write_all(message.as_bytes()).await?;
+    writer.write_all(b"\r\n").await?;
+    Ok(())
+}

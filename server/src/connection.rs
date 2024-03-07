@@ -150,6 +150,23 @@ impl Connection {
                     R::WrongType => self.write_error_string("WRONGTYPE").await?,
                 }
             }
+            Command::HExists { ref key, ref field } => {
+                let r = self
+                    .db
+                    .view_key(key, |value| match value {
+                        Some(db::Value::Hash(h)) => {
+                            if h.contains_key(field) {
+                                1
+                            } else {
+                                0
+                            }
+                        }
+                        Some(_) => 0,
+                        None => 0,
+                    })
+                    .await;
+                self.write_integer(r).await?;
+            }
             Command::HSet { key, field, value } => match self.db.hset(key, field, value).await? {
                 HSetResult::Ok(_) => self.write_integer(1).await?,
                 HSetResult::NotAMap => self.write_error_string("WRONGTYPE").await?,
@@ -200,6 +217,10 @@ enum Command {
         value: ByteStr,
     },
     HGet {
+        key: ByteStr,
+        field: ByteStr,
+    },
+    HExists {
         key: ByteStr,
         field: ByteStr,
     },
@@ -285,6 +306,16 @@ impl Command {
                     err("HGET requires 2 arguments")
                 } else {
                     Ok(Command::HGet {
+                        key: parts[1].clone(),
+                        field: parts[2].clone(),
+                    })
+                }
+            }
+            b"HEXISTS" => {
+                if parts.len() != 3 {
+                    err("HEXISTS requires 2 arguments")
+                } else {
+                    Ok(Command::HExists {
                         key: parts[1].clone(),
                         field: parts[2].clone(),
                     })

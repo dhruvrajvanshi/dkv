@@ -196,6 +196,17 @@ impl Connection {
                 HSetResult::Ok(_) => self.write_integer(1).await?,
                 HSetResult::NotAMap => self.write_error_string("WRONGTYPE").await?,
             },
+            Command::HLen(key) => {
+                let r = self
+                    .db
+                    .view_key(&key, |value| match value {
+                        Some(db::Value::Hash(h)) => h.len(),
+                        Some(_) => 0,
+                        None => 0,
+                    })
+                    .await;
+                self.write_integer(r as i64).await?;
+            }
             Command::FlushAll => {
                 self.db.flush_all().await?;
                 self.write_simple_string("OK").await?;
@@ -250,6 +261,7 @@ enum Command {
         field: ByteStr,
     },
     HGetAll(ByteStr),
+    HLen(ByteStr),
     FlushAll,
 }
 
@@ -352,6 +364,13 @@ impl Command {
                     err("HGETALL requires 1 argument")
                 } else {
                     Ok(Command::HGetAll(parts[1].clone()))
+                }
+            }
+            b"HLEN" => {
+                if parts.len() != 2 {
+                    err("HLEN requires 1 argument")
+                } else {
+                    Ok(Command::HLen(parts[1].clone()))
                 }
             }
             b"FLUSHALL" => {

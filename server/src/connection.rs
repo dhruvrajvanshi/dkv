@@ -167,6 +167,31 @@ impl Connection {
                     .await;
                 self.write_integer(r).await?;
             }
+            Command::HGetAll(ref key) => {
+                let entries = if let Some(db::Value::Hash(mut m)) = self.db.get(key).await? {
+                    m.drain().collect()
+                } else {
+                    vec![]
+                };
+                match self.protocol_version {
+                    ProtocolVersion::RESP2 => {
+                        let mut output = vec![];
+                        for (key, value) in entries {
+                            output.push(key);
+                            output.push(value);
+                        }
+                        protocol::write_bulk_string_array(&mut self.writer, &output).await?;
+                    }
+                    ProtocolVersion::RESP3 => {
+                        let mut output = vec![];
+                        for (key, value) in entries {
+                            output.push(["field".into(), key.into()]);
+                            output.push(["value".into(), value.into()]);
+                        }
+                        protocol::write_map(&mut self.writer, &output).await?;
+                    }
+                }
+            }
             Command::HSet { key, field, value } => match self.db.hset(key, field, value).await? {
                 HSetResult::Ok(_) => self.write_integer(1).await?,
                 HSetResult::NotAMap => self.write_error_string("WRONGTYPE").await?,
@@ -224,6 +249,7 @@ enum Command {
         key: ByteStr,
         field: ByteStr,
     },
+    HGetAll(ByteStr),
     FlushAll,
 }
 
@@ -319,6 +345,13 @@ impl Command {
                         key: parts[1].clone(),
                         field: parts[2].clone(),
                     })
+                }
+            }
+            b"HGETALL" => {
+                if parts.len() != 2 {
+                    err("HGETALL requires 1 argument")
+                } else {
+                    Ok(Command::HGetAll(parts[1].clone()))
                 }
             }
             b"FLUSHALL" => {

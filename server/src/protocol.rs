@@ -113,6 +113,11 @@ impl From<&str> for Value {
         Value::String(ByteStr::from(s))
     }
 }
+impl From<ByteStr> for Value {
+    fn from(s: ByteStr) -> Self {
+        Value::String(s)
+    }
+}
 impl From<HashMap<ByteStr, Value>> for Value {
     fn from(m: HashMap<ByteStr, Value>) -> Self {
         Value::Map(m)
@@ -155,6 +160,19 @@ pub async fn write_map<W: AsyncWrite + Unpin>(
     for [key, value] in map {
         write_value(writer, key).await?;
         write_value(writer, value).await?;
+    }
+    Ok(())
+}
+
+pub async fn write_bulk_string_array<W: AsyncWrite + Unpin>(
+    writer: &mut W,
+    arr: &[ByteStr],
+) -> tokio::io::Result<()> {
+    writer.write_all(b"*").await?;
+    writer.write_all(arr.len().to_string().as_bytes()).await?;
+    writer.write_all(b"\r\n").await?;
+    for s in arr {
+        write_bulk_string(writer, s).await?;
     }
     Ok(())
 }

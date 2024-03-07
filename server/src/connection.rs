@@ -185,8 +185,7 @@ impl Connection {
                     ProtocolVersion::RESP3 => {
                         let mut output = vec![];
                         for (key, value) in entries {
-                            output.push(["field".into(), key.into()]);
-                            output.push(["value".into(), value.into()]);
+                            output.push([key.into(), value.into()]);
                         }
                         protocol::write_map(&mut self.writer, &output).await?;
                     }

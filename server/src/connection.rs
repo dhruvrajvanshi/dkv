@@ -131,6 +131,25 @@ impl Connection {
                 let count = self.db.count(keys).await?;
                 self.write_integer(count as i64).await?
             }
+            Command::HGet { ref key, ref field } => {
+                enum R {
+                    Ok(Option<ByteStr>),
+                    WrongType,
+                }
+                let r = self
+                    .db
+                    .view_key(key, |value| match value {
+                        Some(db::Value::Hash(h)) => R::Ok(h.get(field).cloned()),
+                        Some(_) => R::WrongType,
+                        None => R::Ok(None),
+                    })
+                    .await;
+                match r {
+                    R::Ok(Some(value)) => self.write_bulk_string(&value).await?,
+                    R::Ok(None) => self.write_null_response().await?,
+                    R::WrongType => self.write_error_string("WRONGTYPE").await?,
+                }
+            }
             Command::HSet { key, field, value } => match self.db.hset(key, field, value).await? {
                 HSetResult::Ok(_) => self.write_integer(1).await?,
                 HSetResult::NotAMap => self.write_error_string("WRONGTYPE").await?,
@@ -179,6 +198,10 @@ enum Command {
         key: ByteStr,
         field: ByteStr,
         value: ByteStr,
+    },
+    HGet {
+        key: ByteStr,
+        field: ByteStr,
     },
     FlushAll,
 }
@@ -254,6 +277,16 @@ impl Command {
                         key: parts[1].clone(),
                         field: parts[2].clone(),
                         value: parts[3].clone(),
+                    })
+                }
+            }
+            b"HGET" => {
+                if parts.len() != 3 {
+                    err("HGET requires 2 arguments")
+                } else {
+                    Ok(Command::HGet {
+                        key: parts[1].clone(),
+                        field: parts[2].clone(),
                     })
                 }
             }

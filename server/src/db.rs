@@ -87,6 +87,14 @@ impl DB {
         let data = self.data.read().unwrap();
         f(&data)
     }
+
+    pub async fn view_key<F, R>(&self, key: &ByteStr, f: F) -> R
+    where
+        F: FnOnce(Option<&Value>) -> R,
+    {
+        let data = self.data.read().unwrap();
+        f(data.get(key))
+    }
 }
 
 #[derive(Clone, Debug)]

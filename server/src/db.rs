@@ -145,6 +145,12 @@ impl DB {
         Ok(())
     }
 
+    pub fn unsubscribe(&self, subscription: Subscription) {
+        let mut subs = self.subscriptions.lock().unwrap();
+        subs.remove(&subscription);
+        // TODO: Remove from subscriptions_by_channel
+    }
+
     fn next_subscription(&self) -> Subscription {
         let mut next_id = self.next_subscription_id.lock().unwrap();
         *next_id += 1;
@@ -186,16 +192,16 @@ mod test {
         let db = DB::new();
 
         let messages1 = Arc::new(Mutex::new(vec![]));
-        {
+        let token1 = {
             let messages1 = messages1.clone();
 
             db.subscribe("channel1", move |message| {
                 let mut messages = messages1.lock().unwrap();
                 messages.push(message.value);
-            });
+            })
         };
         let messages2 = Arc::new(Mutex::new(vec![]));
-        {
+        let token2 = {
             let messages2 = messages2.clone();
             db.subscribe("channel1", move |message| {
                 let mut messages = messages2.lock().unwrap();
@@ -205,6 +211,11 @@ mod test {
 
         db.publish("channel1", "message 1").await?;
         db.publish("channel1", "message 2").await?;
+
+        db.unsubscribe(token1);
+        db.unsubscribe(token2);
+
+        db.publish("channel1", "message 3").await?;
 
         let messages1 = messages1.lock().unwrap();
         assert_eq!(

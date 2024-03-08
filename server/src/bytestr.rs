@@ -11,6 +11,12 @@ impl From<&str> for ByteStr {
         ByteStr(s.as_bytes().to_vec())
     }
 }
+
+impl From<&[u8]> for ByteStr {
+    fn from(s: &[u8]) -> Self {
+        ByteStr(s.to_vec())
+    }
+}
 impl From<Vec<u8>> for ByteStr {
     fn from(v: Vec<u8>) -> Self {
         ByteStr(v)

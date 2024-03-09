@@ -10,6 +10,8 @@ use crate::{
     protocol,
 };
 
+type HandleResult = tokio::io::Result<()>;
+
 pub async fn handle_connection(
     socket: TcpStream,
     connection_id: usize,
@@ -83,133 +85,168 @@ impl Connection {
 
     async fn handle_command(&mut self, command: Command) -> tokio::io::Result<()> {
         match command {
-            Command::Hello(name) => {
-                if name.deref().eq(b"2") {
-                    self.protocol_version = ProtocolVersion::RESP2;
-                    self.write_simple_string("OK").await?;
-                } else if name.deref().eq(b"3") {
-                    self.protocol_version = ProtocolVersion::RESP3;
-                    protocol::write_map(
-                        &mut self.writer,
-                        &[
-                            ["id".into(), (self.id as i64).into()],
-                            ["proto".into(), 3.into()],
-                            ["mode".into(), "standalone".into()],
-                            ["role".into(), "master".into()],
-                        ],
-                    )
-                    .await?;
-                } else {
-                    self.write_error_string("Invalid protocol version").await?;
-                }
-            }
-            Command::ClientSetInfo(_, _) => {
-                protocol::write_simple_string(&mut self.writer, "OK").await?;
-            }
-            Command::Get(key) => match self.db.get(&key).await? {
-                Some(db::Value::String(value)) => self.write_bulk_string(&value).await?,
-                None => self.write_null_response().await?,
-                Some(_) => {
-                    self.write_error_string("WRONGTYPE").await?;
-                }
-            },
-            Command::Set(ref key, value) => {
-                self.db.set(key, value).await?;
-                self.write_simple_string("OK").await?
-            }
-            Command::Rename(key, value) => match self.db.rename(&key, value).await? {
-                db::RenameResult::Renamed => self.write_simple_string("OK").await?,
-                db::RenameResult::KeyNotFound => self.write_error_string("no such key").await?,
-            },
-            Command::Del(keys) => {
-                let deleted_keys = self.db.del(&keys).await?;
-                self.write_integer(deleted_keys).await?;
-            }
-            Command::Exists(ref keys) => {
-                let count = self.db.count(keys).await?;
-                self.write_integer(count as i64).await?
-            }
-            Command::HGet { ref key, ref field } => {
-                enum R {
-                    Ok(Option<ByteStr>),
-                    WrongType,
-                }
-                let r = self
-                    .db
-                    .view_key(key, |value| match value {
-                        Some(db::Value::Hash(h)) => R::Ok(h.get(field).cloned()),
-                        Some(_) => R::WrongType,
-                        None => R::Ok(None),
-                    })
-                    .await;
-                match r {
-                    R::Ok(Some(value)) => self.write_bulk_string(&value).await?,
-                    R::Ok(None) => self.write_null_response().await?,
-                    R::WrongType => self.write_error_string("WRONGTYPE").await?,
-                }
-            }
-            Command::HExists { ref key, ref field } => {
-                let r = self
-                    .db
-                    .view_key(key, |value| match value {
-                        Some(db::Value::Hash(h)) => {
-                            if h.contains_key(field) {
-                                1
-                            } else {
-                                0
-                            }
-                        }
-                        Some(_) => 0,
-                        None => 0,
-                    })
-                    .await;
-                self.write_integer(r).await?;
-            }
-            Command::HGetAll(ref key) => {
-                let entries = if let Some(db::Value::Hash(mut m)) = self.db.get(key).await? {
-                    m.drain().collect()
-                } else {
-                    vec![]
-                };
-                match self.protocol_version {
-                    ProtocolVersion::RESP2 => {
-                        let mut output = vec![];
-                        for (key, value) in entries {
-                            output.push(key);
-                            output.push(value);
-                        }
-                        protocol::write_bulk_string_array(&mut self.writer, &output).await?;
-                    }
-                    ProtocolVersion::RESP3 => {
-                        let mut output = vec![];
-                        for (key, value) in entries {
-                            output.push([key.into(), value.into()]);
-                        }
-                        protocol::write_map(&mut self.writer, &output).await?;
-                    }
-                }
-            }
-            Command::HSet { key, field, value } => match self.db.hset(key, field, value).await? {
-                HSetResult::Ok(_) => self.write_integer(1).await?,
-                HSetResult::NotAMap => self.write_error_string("WRONGTYPE").await?,
-            },
-            Command::HLen(key) => {
-                let r = self
-                    .db
-                    .view_key(&key, |value| match value {
-                        Some(db::Value::Hash(h)) => h.len(),
-                        Some(_) => 0,
-                        None => 0,
-                    })
-                    .await;
-                self.write_integer(r as i64).await?;
-            }
-            Command::FlushAll => {
-                self.db.flush_all().await?;
-                self.write_simple_string("OK").await?;
-            }
+            Command::Hello(name) => self.handle_hello(name).await?,
+            Command::ClientSetInfo(_, _) => self.handle_client_setinfo().await?,
+            Command::Get(key) => self.handle_get(key).await?,
+            Command::Set(ref key, value) => self.handle_set(key, value).await?,
+            Command::Rename(key, value) => self.handle_rename(key, value).await?,
+            Command::Del(keys) => self.handle_del(keys).await?,
+            Command::Exists(ref keys) => self.handle_exists(keys).await?,
+            Command::HGet { ref key, ref field } => self.handle_hget(key, field).await?,
+            Command::HExists { ref key, ref field } => self.handle_hexists(key, field).await?,
+            Command::HGetAll(ref key) => self.handle_hgetall(key).await?,
+            Command::HSet { key, field, value } => self.handle_hset(key, field, value).await?,
+            Command::HLen(key) => self.handle_hlen(key).await?,
+            Command::FlushAll => self.handle_flushall().await?,
         }
         Ok(())
+    }
+
+    async fn handle_client_setinfo(&mut self) -> Result<(), std::io::Error> {
+        protocol::write_simple_string(&mut self.writer, "OK").await?;
+        Ok(())
+    }
+
+    async fn handle_hello(&mut self, name: ByteStr) -> HandleResult {
+        Ok(if name.deref().eq(b"2") {
+            self.protocol_version = ProtocolVersion::RESP2;
+            self.write_simple_string("OK").await?;
+        } else if name.deref().eq(b"3") {
+            self.protocol_version = ProtocolVersion::RESP3;
+            protocol::write_map(
+                &mut self.writer,
+                &[
+                    ["id".into(), (self.id as i64).into()],
+                    ["proto".into(), 3.into()],
+                    ["mode".into(), "standalone".into()],
+                    ["role".into(), "master".into()],
+                ],
+            )
+            .await?;
+        } else {
+            self.write_error_string("Invalid protocol version").await?;
+        })
+    }
+
+    async fn handle_get(&mut self, key: ByteStr) -> HandleResult {
+        Ok(match self.db.get(&key).await? {
+            Some(db::Value::String(value)) => self.write_bulk_string(&value).await?,
+            None => self.write_null_response().await?,
+            Some(_) => {
+                self.write_error_string("WRONGTYPE").await?;
+            }
+        })
+    }
+
+    async fn handle_set(&mut self, key: &ByteStr, value: ByteStr) -> HandleResult {
+        self.db.set(key, value).await?;
+        Ok(self.write_simple_string("OK").await?)
+    }
+
+    async fn handle_rename(&mut self, key: ByteStr, value: ByteStr) -> HandleResult {
+        Ok(match self.db.rename(&key, value).await? {
+            db::RenameResult::Renamed => self.write_simple_string("OK").await?,
+            db::RenameResult::KeyNotFound => self.write_error_string("no such key").await?,
+        })
+    }
+
+    async fn handle_del(&mut self, keys: Vec<ByteStr>) -> HandleResult {
+        let deleted_keys = self.db.del(&keys).await?;
+        self.write_integer(deleted_keys).await?;
+        Ok(())
+    }
+
+    async fn handle_exists(&mut self, keys: &Vec<ByteStr>) -> Result<(), std::io::Error> {
+        let count = self.db.count(keys).await?;
+        Ok(self.write_integer(count as i64).await?)
+    }
+
+    async fn handle_hget(&mut self, key: &ByteStr, field: &ByteStr) -> HandleResult {
+        enum R {
+            Ok(Option<ByteStr>),
+            WrongType,
+        }
+        let r = self
+            .db
+            .view_key(key, |value| match value {
+                Some(db::Value::Hash(h)) => R::Ok(h.get(field).cloned()),
+                Some(_) => R::WrongType,
+                None => R::Ok(None),
+            })
+            .await;
+        Ok(match r {
+            R::Ok(Some(value)) => self.write_bulk_string(&value).await?,
+            R::Ok(None) => self.write_null_response().await?,
+            R::WrongType => self.write_error_string("WRONGTYPE").await?,
+        })
+    }
+
+    async fn handle_hexists(&mut self, key: &ByteStr, field: &ByteStr) -> HandleResult {
+        let r = self
+            .db
+            .view_key(key, |value| match value {
+                Some(db::Value::Hash(h)) => {
+                    if h.contains_key(field) {
+                        1
+                    } else {
+                        0
+                    }
+                }
+                Some(_) => 0,
+                None => 0,
+            })
+            .await;
+        self.write_integer(r).await?;
+        Ok(())
+    }
+
+    async fn handle_hgetall(&mut self, key: &ByteStr) -> HandleResult {
+        let entries = if let Some(db::Value::Hash(mut m)) = self.db.get(key).await? {
+            m.drain().collect()
+        } else {
+            vec![]
+        };
+        Ok(match self.protocol_version {
+            ProtocolVersion::RESP2 => {
+                let mut output = vec![];
+                for (key, value) in entries {
+                    output.push(key);
+                    output.push(value);
+                }
+                protocol::write_bulk_string_array(&mut self.writer, &output).await?;
+            }
+            ProtocolVersion::RESP3 => {
+                let mut output = vec![];
+                for (key, value) in entries {
+                    output.push([key.into(), value.into()]);
+                }
+                protocol::write_map(&mut self.writer, &output).await?;
+            }
+        })
+    }
+
+    async fn handle_hset(&mut self, key: ByteStr, field: ByteStr, value: ByteStr) -> HandleResult {
+        Ok(match self.db.hset(key, field, value).await? {
+            HSetResult::Ok(_) => self.write_integer(1).await?,
+            HSetResult::NotAMap => self.write_error_string("WRONGTYPE").await?,
+        })
+    }
+
+    async fn handle_flushall(&mut self) -> HandleResult {
+        self.db.flush_all().await?;
+        self.write_simple_string("OK").await
+    }
+
+    async fn handle_hlen(&mut self, key: ByteStr) -> HandleResult {
+        let r = self
+            .db
+            .view_key(&key, |value| match value {
+                Some(db::Value::Hash(h)) => h.len(),
+                Some(_) => 0,
+                None => 0,
+            })
+            .await;
+        self.write_integer(r as i64).await
     }
 
     async fn write_error_string(&mut self, message: &str) -> tokio::io::Result<()> {

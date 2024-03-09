@@ -1,9 +1,6 @@
 use std::{
     collections::HashMap,
-    sync::{
-        atomic::{AtomicUsize, Ordering},
-        Arc, Mutex, RwLock,
-    },
+    sync::{Arc, Mutex, RwLock},
 };
 
 use crate::bytestr::ByteStr;
@@ -103,6 +100,17 @@ impl DB {
     {
         let data = self.data.read().unwrap();
         f(data.get(key))
+    }
+
+    pub async fn del(&self, keys: &[ByteStr]) -> Result<i64> {
+        let mut data = self.data.write().unwrap();
+        let mut deleted_count = 0_i64;
+        for key in keys {
+            if data.remove(key).is_some() {
+                deleted_count += 1;
+            }
+        }
+        Ok(deleted_count)
     }
 
     pub fn subscribe<F>(&self, channel: impl Into<String>, f: F) -> Subscription

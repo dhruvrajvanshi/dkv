@@ -47,3 +47,24 @@ def test_get_with_integer_value(protocol):
     r = make_redis(protocol)
     r.set("foo", 1)
     assert r.get("foo") == "1"
+
+@with_supported_protocols
+def test_del_non_existent(protocol):
+    r = make_redis(protocol)
+    r.delete("foo")
+
+@with_supported_protocols
+def test_del_existing(protocol):
+    r = make_redis(protocol)
+    r.set("foo", "bar")
+    r.delete("foo")
+    assert r.get("foo") is None
+
+@with_supported_protocols
+def test_del_multiple(protocol):
+    r = make_redis(protocol)
+    r.set("foo", "bar")
+    r.set("bar", "baz")
+    r.delete("foo", "bar")
+    assert r.get("foo") is None
+    assert r.get("bar") is None

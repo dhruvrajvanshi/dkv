@@ -106,16 +106,13 @@ impl Connection {
             Command::ClientSetInfo(_, _) => {
                 protocol::write_simple_string(&mut self.writer, "OK").await?;
             }
-            Command::Get(key) => {
-                match self.db.get(&key).await? {
-                    Some(db::Value::String(value)) => self.write_bulk_string(&value).await?,
-                    None => self.write_null_response().await?,
-                    Some(_) => {
-                        self.write_error_string("WRONGTYPE").await?;
-                    }
+            Command::Get(key) => match self.db.get(&key).await? {
+                Some(db::Value::String(value)) => self.write_bulk_string(&value).await?,
+                None => self.write_null_response().await?,
+                Some(_) => {
+                    self.write_error_string("WRONGTYPE").await?;
                 }
-                protocol::write_error_string(&mut self.writer, "Unimplemented").await?;
-            }
+            },
             Command::Set(ref key, value) => {
                 self.db.set(key, value).await?;
                 self.write_simple_string("OK").await?
@@ -124,8 +121,9 @@ impl Connection {
                 db::RenameResult::Renamed => self.write_simple_string("OK").await?,
                 db::RenameResult::KeyNotFound => self.write_error_string("no such key").await?,
             },
-            Command::Del(_) => {
-                protocol::write_error_string(&mut self.writer, "Unimplemented").await?;
+            Command::Del(keys) => {
+                let deleted_keys = self.db.del(&keys).await?;
+                self.write_integer(deleted_keys).await?;
             }
             Command::Exists(ref keys) => {
                 let count = self.db.count(keys).await?;
@@ -244,7 +242,7 @@ enum Command {
     Get(ByteStr),
     Set(ByteStr, ByteStr),
     Rename(ByteStr, ByteStr),
-    Del(ByteStr),
+    Del(Vec<ByteStr>),
     Exists(Vec<ByteStr>),
     HSet {
         key: ByteStr,
@@ -314,10 +312,10 @@ impl Command {
                 }
             }
             b"DEL" => {
-                if parts.len() != 2 {
-                    err("DEL requires 1 argument")
+                if parts.len() < 2 {
+                    err("DEL requires at least 1 argument")
                 } else {
-                    Ok(Command::Del(parts[1].clone()))
+                    Ok(Command::Del(parts[1..].to_vec()))
                 }
             }
             b"EXISTS" => {

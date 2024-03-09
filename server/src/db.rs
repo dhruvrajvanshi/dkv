@@ -9,7 +9,7 @@ use crate::bytestr::ByteStr;
 pub struct DB {
     data: Arc<RwLock<HashMap<ByteStr, Value>>>,
     next_subscription_id: Arc<Mutex<usize>>,
-    subscriptions_by_channel: Arc<Mutex<HashMap<String, Vec<Subscription>>>>,
+    subscriptions_by_channel: Arc<Mutex<HashMap<ByteStr, Vec<Subscription>>>>,
     subscriptions: Arc<Mutex<HashMap<Subscription, Arc<dyn Fn(Message) + Send + Sync + 'static>>>>,
 }
 
@@ -113,7 +113,7 @@ impl DB {
         Ok(deleted_count)
     }
 
-    pub fn subscribe<F>(&self, channel: impl Into<String>, f: F) -> Subscription
+    pub fn subscribe<F>(&self, channel: impl Into<ByteStr>, f: F) -> Subscription
     where
         F: Fn(Message) + Send + Sync + 'static,
     {
@@ -132,11 +132,11 @@ impl DB {
 
     pub async fn publish(
         &self,
-        channel: impl Into<String>,
+        channel: impl Into<ByteStr>,
         message: impl Into<ByteStr>,
     ) -> Result<()> {
         let subs_by_channel = self.subscriptions_by_channel.lock().unwrap();
-        let channel: String = channel.into();
+        let channel: ByteStr = channel.into();
         let message: ByteStr = message.into();
         let empty = vec![];
         let subs = subs_by_channel.get(&channel).unwrap_or(&empty);
@@ -166,7 +166,7 @@ impl DB {
     }
 }
 pub struct Message {
-    channel: String,
+    channel: ByteStr,
     value: ByteStr,
 }
 
